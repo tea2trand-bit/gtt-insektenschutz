@@ -62,10 +62,12 @@ export default async (req: Request, _context: Context) => {
   // Seasonal offer applied in the calculator (e.g. "Herbst-/Winteraktion −15% (regulär CHF 1'234.–)").
   const aktion = (d.aktion || "").trim();
 
-  // The calculator already stores the price including its "CHF" prefix
-  // (e.g. "CHF 1'234.–"). Strip a leading "CHF" so the offer text can render
-  // "CHF <Betrag>" without duplicating the currency.
-  const preisBetrag = preis.replace(/^\s*CHF\s*/i, "").trim();
+  // Current calculator submissions include a label ("Fixpreis: CHF 186.–"
+  // or "Orientierungspreis: CHF 186.–"); older submissions start with CHF.
+  // Remove either prefix once so subject, HTML and text share one currency.
+  const preisBetrag = preis
+    .replace(/^(?:(?:Fixpreis|Orientierungspreis)\s*:\s*)?CHF\s*/i, "")
+    .trim();
 
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
