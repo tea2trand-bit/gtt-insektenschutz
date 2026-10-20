@@ -1,2 +1,6 @@
 node_modules/
 .netlify/
+.npm-cache/
+.local-records/
+test-results/
+dist/

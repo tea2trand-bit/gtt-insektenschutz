@@ -9,6 +9,7 @@
   <link rel="canonical" href="https://gtt-insektenschutz.ch/">
   <link rel="alternate" hreflang="de-CH" href="https://gtt-insektenschutz.ch/">
   <script defer src="analytics.js?v=20260930"></script>
+  <script defer src="inquiry-id.js"></script>
 
   <!-- Fonts: Space Grotesk (engineering display) + Inter (readable body) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -211,6 +212,8 @@
 
       <form class="calc-form" id="offerForm" name="angebot" method="POST" action="/danke" data-netlify="true" netlify-honeypot="bot-field">
         <input type="hidden" name="form-name" value="angebot">
+        <input type="hidden" name="inquiry_id" value="">
+        <input type="hidden" name="record_source" value="angebot">
         <input type="hidden" name="subject" value="Neue Offertanfrage – GTT Insektenschutz">
         <p class="hidden"><label>Nicht ausfüllen: <input name="bot-field"></label></p>
 
@@ -544,6 +547,8 @@
       <h3>Projekt kurz beschreiben</h3>
       <form name="kontakt" method="POST" action="/danke" data-netlify="true" netlify-honeypot="bot-field">
         <input type="hidden" name="form-name" value="kontakt">
+        <input type="hidden" name="inquiry_id" value="">
+        <input type="hidden" name="record_source" value="kontakt">
         <input type="hidden" name="subject" value="Neue Kontaktanfrage – GTT Insektenschutz">
         <p class="hidden"><label>Nicht ausfüllen: <input name="bot-field"></label></p>
 
@@ -630,6 +635,8 @@
 
     <form class="modal-form" name="b2b-anfrage" method="POST" action="/danke" data-netlify="true" netlify-honeypot="bot-field">
       <input type="hidden" name="form-name" value="b2b-anfrage">
+      <input type="hidden" name="inquiry_id" value="">
+      <input type="hidden" name="record_source" value="b2b-anfrage">
       <input type="hidden" name="subject" value="Neue B2B-Anfrage – GTT Insektenschutz">
       <p class="hidden"><label>Nicht ausfüllen: <input name="bot-field"></label></p>
 
