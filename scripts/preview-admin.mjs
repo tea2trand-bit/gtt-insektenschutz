@@ -13,6 +13,8 @@ await mkdir(path.join(root,'.local-records'),{recursive:true});
 const db=await PGlite.create({dataDir:path.join(root,'.local-records/db')});
 const exists=await db.query("SELECT to_regclass('public.gtt_records') AS name");
 if(!exists.rows[0].name) await db.exec(await readFile(path.join(root,'netlify/database/migrations/20261021010000_admin_records.sql'),'utf8'));
+const pendingExists=await db.query("SELECT to_regclass('public.gtt_pending_inquiries') AS name");
+if(!pendingExists.rows[0].name) await db.exec(await readFile(path.join(root,'netlify/database/migrations/20261021014500_pending_history.sql'),'utf8'));
 for(const [key,form,name,company,price]of [['private','angebot','TEST · Demo kupac','','CHF 186.–'],['business','b2b-anfrage','TEST · Demo firma','TEST Firma AG',''],['contact','kontakt','TEST · Demo kontakt','','']]){
   await createRecord(db,fromSubmission({inquiry_id:'preview-'+key,record_source:form,name,firma:company,email:'test@example.invalid',telefon:'+41 00 000 00 00',plz:'9000',fensterflaeche_m2:'1',tuerflaeche_m2:'0',berechneter_preis:price,aktion:price?'Herbst-/Winteraktion −15% (regulär CHF 219.–)':'',nachricht:'TEST · Lokalni primer za pregled. Nije narudžbina.'}));
 }

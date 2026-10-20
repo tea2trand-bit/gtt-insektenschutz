@@ -10,13 +10,15 @@ Netlify Database / Postgres čuva kartone, istoriju i privatne dokumente do 2 MB
 
 Migracije su u `netlify/database/migrations/`. Hosted migracije primenjuje Netlify deploy; nemoj ih ručno izvršavati nad produkcijom. Preview dobija svoju DB granu. Stvarni podaci iz produkcije se ne koriste za demonstraciju.
 
-`records-event.mts` sluša Netlify `formSubmitted` događaj sa verifikovanim potpisom. Ne menja `submission-created.mts`, niti slanje emaila. Kalkulator, B2B i kontakt imaju `record_source` i `inquiry_id`. `inquiry-id.js` čuva isti ID tokom ponovljenog slanja; uspešan reset forme kreira novi ID. Novi karton uvek počinje kao „Novi upit“. Prihvatanje zahteva dogovorenu cenu i datum, a odbijanje datum i razlog. Slanje emaila nije dokazano statusom kartona; admin ručno upisuje potvrđeno slanje i tekst/dokument ponude.
+`records-event.mts` sluša Netlify `formSubmitted` događaj sa verifikovanim potpisom. Ne menja `submission-created.mts`, niti slanje emaila. Kalkulator, B2B i kontakt imaju `record_source` i `inquiry_id`. `inquiry-id.js` čuva isti ID tokom ponovljenog slanja; uspešan reset forme kreira novi ID. Novi karton uvek počinje kao „Novi upit“. „Dogovoren posao“ jednim klikom preuzima poslednju ponuđenu cenu i beleži današnji datum u Europe/Zurich vremenu; ako cena nedostaje, traži samo iznos. „Odbijeno“ beleži datum i ishod, a razlog je neobavezan. Ovo je interna evidencija administratorove odluke. Originalna ponuda ostaje sačuvana. Slanje emaila nije dokazano statusom kartona; admin upisuje potvrđeno slanje i tekst/dokument ponude.
 
 Raniji Netlify zapisi mogu se uvesti u adminu kao JSON niz sa `id`, `form_name`, `created_at`, `data`. Uvoz koristi sačuvani inquiry_id, kada postoji, ili originalni Netlify submission ID. Ponovljen uvoz ne prepisuje postojeći karton. Ranije forme bez novog ID-a ostaju u Netlify; njihov originalni ID koristi se u uvozu.
 
+„Dodaj klijenta“ unosi klijenta bez javne platforme, sa imenom ili firmom i telefonom ili emailom; ostala polja su neobavezna. Novi zapis koristi izvor Ručni unos, dobija stabilan ID i istoriju, i ne šalje email. Raniji upiti koji čekaju korisnikov pregled čuvaju se odvojeno u `gtt_pending_inquiries` i vide samo kroz admin API, bez pretvaranja u operativne poslove.
+
 ## Lokalni pregled
 
-Node >=22.12 (preporučeno24), `npm ci`, `npm run preview:admin`. Adresa: `http://127.0.0.1:4400/admin`, lokalna lozinka `gtt-demo-local`. PGlite izvršava pravi Postgres SQL i čuva isključivo označene test podatke u `.local-records/db`. Ovaj folder je ignorisan u Gitu i ne ulazi u build. Postojeća galerija/akcija u ovom lokalnom pregledu su izolovani primeri; osnovna evidencija koristi stvarnu lokalnu bazu.
+Node >=22.12 (preporučeno24), `npm ci`, `npm run preview:admin`. Adresa: `http://127.0.0.1:4400/admin`, lokalna lozinka `gtt-demo-local`. PGlite izvršava pravi Postgres SQL i čuva podatke u `.local-records/db`. Ovaj folder je ignorisan u Gitu i ne ulazi u build. Operativni demo kartoni su označeni TEST. Poseban privatni istorijski spisak sadrži podatke korisnika koji čekaju pregled; ne koristiti ih za demonstracije. Postojeća galerija/akcija u ovom lokalnom pregledu su izolovani primeri; evidencija koristi stvarnu lokalnu bazu.
 
 `npm test`, `npm run typecheck`, `npm run build`. Test obuhvata sva tri izvora, duplikate, originalnu cenu, istoriju, konkurentne izmene, obavezna polja odluka, uplate, rešavanje reklamacija, privatnost dokumenata i admin autentifikaciju.
 

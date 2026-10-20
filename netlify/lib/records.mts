@@ -19,12 +19,12 @@ export function date(v: unknown): string {
   return s;
 }
 function calcAmount(v: string): number | null {
-  const clean = v.replace(/CHF/gi, "").replace(/[’'\s]/g, "").replace(/\.?[–—-]$/, "").replace(",", ".");
+  const clean = v.replace(/^(?:Fixpreis|Orientierungspreis|Richtpreis)\s*:\s*/i, "").replace(/CHF/gi, "").replace(/[’'\s]/g, "").replace(/\.?[–—-]$/, "").replace(",", ".");
   return /^\d+(\.\d{1,2})?$/.test(clean) ? amount(clean) : null;
 }
 export function fromSubmission(data: Record<string, unknown>, meta: {id?: string; form?: string; at?: string} = {}) {
   const form = text(meta.form || data.record_source || data["form-name"]);
-  const sources: Record<string, string> = { angebot: "Kalkulator", "angebot-netlify-fallback": "Kalkulator", "b2b-anfrage": "B2B", kontakt: "Kontakt" };
+  const sources: Record<string, string> = { angebot: "Kalkulator", "angebot-netlify-fallback": "Kalkulator", "b2b-anfrage": "B2B", kontakt: "Kontakt", manual: "Ručni unos" };
   if (!sources[form]) return null;
   const raw = Object.fromEntries(Object.entries(data).filter(([k]) => !["bot-field", "ip", "user_agent"].includes(k)).map(([k,v]) => [k, text(v)]));
   const inquiryId = text(data.inquiry_id, 100);
@@ -35,7 +35,7 @@ export function fromSubmission(data: Record<string, unknown>, meta: {id?: string
   const id = "GTT-" + createHash("sha256").update(stable).digest("hex").slice(0, 24);
   const original = { form, submissionId: meta.id || "", inquiryId, fields: raw, price: calcAmount(text(data.berechneter_preis)), action: text(data.aktion), receivedAt: meta.at || new Date().toISOString() };
   const document = {
-    name: text(data.name, 200), company: text(data.firma, 200), email: text(data.email, 250), phone: text(data.telefon, 100),
+    name: text(data.name, 200), company: text(data.firma, 200), email: text(data.email, 250), phone: text(data.telefon, 100), channel: text(data.kanal,100),
     address: text(data.adresse, 500), postalCode: text(data.plz, 80), products: form.startsWith("angebot") ? `Prozori: ${text(data.fensterflaeche_m2) || "0"} m²; vrata: ${text(data.tuerflaeche_m2) || "0"} m²` : "",
     request: text(data.nachricht), notes: "", status: "Novi upit", isTest: /^TEST\b/i.test(text(data.name)),
     quotedPrice: original.price, extraCosts: 0, discount: text(data.aktion, 400), agreedPrice: null,
@@ -45,12 +45,22 @@ export function fromSubmission(data: Record<string, unknown>, meta: {id?: string
   };
   return { id, source: sources[form], original, document };
 }
-const texts: Record<string, number> = { name:200, company:200, email:250, phone:100, address:500, postalCode:80, products:3000, request:6000, notes:6000, discount:400, offerText:10000, decisionReason:2000, decisionEvidence:2000, workNotes:6000, invoiceNumber:100 };
+const texts: Record<string, number> = { name:200, company:200, email:250, phone:100, channel:100, address:500, postalCode:80, products:3000, request:6000, notes:6000, discount:400, offerText:10000, decisionReason:2000, decisionEvidence:2000, workNotes:6000, invoiceNumber:100 };
 const dates = ["offerSentAt", "decisionDate", "measuredAt", "orderedAt", "appointmentAt", "installedAt", "invoiceDate", "invoiceDue"];
-export function applyChange(current: any, body: any, today = new Date().toISOString().slice(0,10)) {
+export function applyChange(current: any, body: any, today = new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Zurich'})) {
   const d = structuredClone(current);
   const kind = body.action || "update";
-  if (kind === "update") {
+  if (kind === "decision") {
+    if(!['Prihvaćeno','Odbijeno'].includes(body.status))throw new RecordError("Izaberi ishod upita.");
+    if(body.status==='Prihvaćeno'){
+      const price=body.agreedPrice!==undefined?amount(body.agreedPrice):(d.quotedPrice??d.agreedPrice);
+      if(price===null||price===undefined)throw new RecordError("Cena još nije zabeležena. Unesi dogovoreni iznos.");
+      d.agreedPrice=price;
+    }
+    d.status=body.status;
+    d.decisionDate=today;
+    if(body.reason!==undefined)d.decisionReason=text(body.reason,2000);
+  } else if (kind === "update") {
     const patch = body.patch;
     if (!patch || typeof patch !== "object" || Array.isArray(patch)) throw new RecordError("Nedostaju polja kartona.");
     const allowed = [...Object.keys(texts), ...dates, "quotedPrice", "extraCosts", "agreedPrice", "invoiceAmount", "status"];
@@ -65,7 +75,7 @@ export function applyChange(current: any, body: any, today = new Date().toISOStr
       d.status = patch.status;
     }
     if (d.status === "Prihvaćeno" && (d.agreedPrice === null || !d.decisionDate)) throw new RecordError("Za prihvatanje unesi dogovorenu cenu i datum dogovora.");
-    if (d.status === "Odbijeno" && (!d.decisionReason || !d.decisionDate)) throw new RecordError("Za odbijanje unesi datum i razlog.");
+    if (d.status === "Odbijeno" && !d.decisionDate) throw new RecordError("Za odbijanje unesi datum odluke.");
     if (d.status === "Ponuda poslata" && !d.offerSentAt) throw new RecordError("Unesi datum kada je ponuda poslata.");
     if (current.status !== d.status && ["Montaža", "Završeno"].includes(d.status) && (!d.decisionDate || d.agreedPrice === null)) throw new RecordError("Pre izvođenja zabeleži datum dogovora i dogovorenu cenu.");
   } else if (kind === "payment") {
