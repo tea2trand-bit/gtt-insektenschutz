@@ -1,15 +1,15 @@
 (() => {
   const root = document.getElementById('recordsRoot');
   const STATUSES=['Novi upit','Ponuda poslata','Čeka odgovor','Prihvaćeno','Odbijeno','Montaža','Završeno'];
-  const historyTitle=kind=>({created:'Karton otvoren',payment:'Zabeležena uplata',complaint:'Izmenjena reklamacija',decision:'Zabeležen ishod upita',appointment:'Zabeležen termin montaže','cancel-appointment':'Otkazan termin montaže',quote:'Pripremljena nova ponuda',quote_intake:'Automatski izdvojene mere i obračun',quote_email:'Obrađeno slanje poruke kupcu'}[kind]||'Sačuvan karton');
+  const historyTitle=kind=>({created:'Karton otvoren',archive:'Upit uklonjen iz aktivne evidencije',restore:'Upit vraćen iz arhive','historical-complete':'Raniji upit označen kao završen','start-installation':'Započeta montaža',complete:'Posao završen',payment:'Zabeležena uplata',complaint:'Izmenjena reklamacija',decision:'Zabeležen ishod upita',appointment:'Zabeležen termin montaže','cancel-appointment':'Otkazan termin montaže',quote:'Pripremljena nova ponuda',quote_intake:'Automatski izdvojene mere i obračun',quote_email:'Obrađeno slanje poruke kupcu'}[kind]||'Sačuvan karton');
   const $=(s)=>root.querySelector(s);
   const money=n=>n==null?'Nije uneto':new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF'}).format(n);
   const day=s=>s?new Date(s).toLocaleDateString('sr-Latn-RS'):'—';
   const today=()=>new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Zurich'});
   const e=(tag,attrs={},...children)=>{const n=document.createElement(tag);for(const[k,v]of Object.entries(attrs)){if(k.startsWith('on'))n.addEventListener(k.slice(2),v);else if(k==='class')n.className=v;else if(v!=null)n.setAttribute(k,v);}children.flat().forEach(c=>c!=null&&n.append(c));return n;};
   const btn=(label,fn,kind='ghost small')=>e('button',{type:'button',class:'btn '+kind,onclick:fn},label);
-  let list=[],pending=[],selected=null,filter='',search='',source='',busy=false,view='inquiries';
-  const hasAppointment=d=>d.appointmentAt&&d.appointmentTime&&d.appointmentStatus!=='cancelled'&&['Prihvaćeno','Montaža'].includes(d.status);
+  let list=[],selected=null,filter='',search='',source='',busy=false,view='inquiries',showArchived=false;
+  const hasAppointment=d=>!d.archivedAt&&d.appointmentAt&&d.appointmentTime&&d.appointmentStatus!=='cancelled'&&['Prihvaćeno','Montaža'].includes(d.status);
   const appointmentText=d=>day(d.appointmentAt)+' u '+d.appointmentTime;
   async function api(path='',opts={}){
     const token=sessionStorage.getItem('gttAdminToken');
@@ -22,33 +22,25 @@
     const d=await r.json();if(!r.ok)throw Error(d.error||'Greška pri čuvanju.');return d;
   }
   function error(err){const box=$('#recordError');if(box){box.textContent=err.message;box.scrollIntoView({block:'nearest'});}else root.prepend(e('p',{class:'record-error'},err.message));}
-  async function load(){try{const results=await Promise.all([api(),api('/pending')]);list=results[0].records;pending=results[1].pending;renderList();}catch(err){root.replaceChildren(e('h2',{},'Upiti / Anfragen'),e('p',{class:'record-error'},err.message),btn('Pokušaj ponovo',load));}}
+  async function load(){try{list=(await api(showArchived?'?archived=1':'')).records;renderList();}catch(err){root.replaceChildren(e('h2',{},'Upiti / Anfragen'),e('p',{class:'record-error'},err.message),btn('Pokušaj ponovo',load));}}
   async function open(id){try{selected=(await api('/'+id)).record;renderRecord();root.scrollIntoView({block:'start'});$('.record-heading').focus({preventScroll:true});}catch(err){error(err);}}
   function renderList(){
-    selected=null;root.replaceChildren(e('div',{class:'record-head'},e('div',{},e('h2',{},'Upiti / Anfragen'),e('p',{class:'record-note'},'Svaki upit ima svoj karton. Prihvatanje i odbijanje beleže se posebno.')),e('div',{class:'record-actions'},btn('Dodaj klijenta',manual,''),btn('Osveži',load))));
+    selected=null;root.replaceChildren(e('div',{class:'record-head'},e('div',{},e('h2',{},showArchived?'Arhiva upita':'Upiti / Anfragen'),e('p',{class:'record-note'},showArchived?'Uklonjeni upiti su sačuvani i mogu da se vrate u glavnu evidenciju.':'Svaki upit ima svoj karton. Prihvatanje i odbijanje beleže se posebno.')),e('div',{class:'record-actions'},...(showArchived?[]:[btn('Dodaj klijenta',manual,'')]),btn(showArchived?'← Aktivni upiti':'Arhiva',()=>{showArchived=!showArchived;view='inquiries';filter='';search='';load();}),btn('Osveži',load))));
     if(window.location.hostname==='127.0.0.1'||window.location.hostname==='localhost')root.append(e('div',{class:'record-alert'},'LOKALNI PREGLED · Samo označeni test podaci. Promene se čuvaju lokalno.'));
     const now=new Date().toLocaleString('sv-SE',{timeZone:'Europe/Zurich'}).slice(0,16).replace(' ','T');
     const appointments=list.filter(r=>hasAppointment(r.document)&&(r.document.appointmentAt+'T'+r.document.appointmentTime)>=now).sort((a,b)=>(a.document.appointmentAt+a.document.appointmentTime).localeCompare(b.document.appointmentAt+b.document.appointmentTime));
-    root.append(e('div',{class:'record-actions'},btn('Upiti',()=>{view='inquiries';renderList();},view==='inquiries'?'small':'ghost small'),btn('Montaže · '+appointments.length,()=>{view='appointments';renderList();},view==='appointments'?'small':'ghost small')));
+    if(!showArchived)root.append(e('div',{class:'record-actions'},btn('Upiti',()=>{view='inquiries';renderList();},view==='inquiries'?'small':'ghost small'),btn('Montaže · '+appointments.length,()=>{view='appointments';renderList();},view==='appointments'?'small':'ghost small')));
     if(view==='appointments'){
       root.append(e('h2',{style:'margin-top:20px'},'Predstojeće montaže'),e('p',{class:'record-note'},'Interni termini u švajcarskom lokalnom vremenu (Europe/Zurich).'));
       if(!appointments.length)root.append(e('p',{class:'record-empty'},'Nema predstojećih zakazanih montaža. Termin zadaješ dugmetom „Zakaži termin montaže“ u dogovorenom poslu.'));
       appointments.forEach(r=>{const d=r.document;root.append(e('div',{class:'record-row'},e('div',{},e('strong',{},d.name||d.company),e('small',{},d.isTest?'TEST · Nije stvarna poseta':'')),e('div',{},e('strong',{},appointmentText(d)),e('small',{},[d.address,d.postalCode].filter(Boolean).join(' · ')||'Adresa nije uneta')),e('div',{},d.phone||d.email,e('small',{},d.appointmentNote||'')),btn('Otvori karton',()=>open(r.id),'small')));});return;
     }
     const counts=e('div',{class:'record-summary'});
-    [['','Svi'],...STATUSES.map(s=>[s,s])].forEach(([s,label])=>counts.append(btn(label+' · '+list.filter(r=>!s||r.document.status===s).length,()=>{filter=s;renderList();},s===filter?'active':'')));
+    [['','Svi'],...STATUSES.map(s=>[s,s])].forEach(([s,label])=>counts.append(e('button',{type:'button',class:s===filter?'active':'',onclick:()=>{filter=s;renderList();}},e('span',{},label),e('strong',{class:'record-kpi-value'},String(list.filter(r=>!s||r.document.status===s).length)))));
     root.append(counts);
     const input=e('input',{placeholder:'Traži ime, firmu, telefon ili ID',value:search,'aria-label':'Pretraga upita',oninput:ev=>{search=ev.target.value;drawRows();}});
     const sources=e('select',{'aria-label':'Izvor upita',onchange:ev=>{source=ev.target.value;drawRows();}},...['Svi izvori','Kalkulator','B2B','Kontakt','Ručni unos'].map(s=>e('option',{value:s==='Svi izvori'?'':s},s)));sources.value=source;
     root.append(e('div',{class:'record-toolbar'},input,sources),e('div',{id:'recordRows',class:'record-list'}));drawRows();
-    const imp=e('input',{type:'file',accept:'.json,application/json','aria-label':'Netlify JSON za uvoz',onchange:async ev=>{try{const data=JSON.parse(await ev.target.files[0].text());const r=await api('/import',{method:'POST',json:{submissions:Array.isArray(data)?data:data.submissions}});await load();root.prepend(e('p',{class:'record-note'},`Uvezeno: ${r.created}. Već postoje: ${r.duplicates}.`));}catch(err){error(err);}}});
-    const stageInput=e('input',{type:'file',accept:'.json,application/json','aria-label':'Privatni spisak ranijih upita',onchange:async ev=>{try{const data=JSON.parse(await ev.target.files[0].text());const r=await api('/pending',{method:'POST',json:{submissions:Array.isArray(data)?data:data.submissions}});await load();root.prepend(e('p',{class:'record-note'},`Pripremljeno za pregled: ${r.staged}. Već postoje: ${r.duplicates}.`));}catch(err){error(err);}}});
-    root.append(e('details',{},e('summary',{},'Uvoz ranijih Netlify upita'),e('p',{class:'record-note'},'Uvoz prepoznaje izvorne ID-eve i čuva postojeće kartone. Ovde uvezi samo izabrane zapise koji treba da dobiju karton.'),imp,e('p',{class:'record-note'},'Ostale ranije upite možeš samo pripremiti na privatni spisak za pregled, bez prenosa u poslove.'),stageInput));
-    if(pending.length){
-      const box=e('details',{},e('summary',{},`Raniji upiti — čekaju pregled · ${pending.length}`),e('p',{class:'record-note'},'Ovo je privatni pregled originalnih podataka. Ovi upiti još nisu preneti u operativne kartone i nemaju zabeležen dogovor.'));
-      pending.forEach(p=>{const f=p.original.fields;box.append(e('details',{},e('summary',{},`${f.name||f.firma||'Bez imena'} · ${p.source} · ${day(p.received_at)}`),e('p',{class:'record-note'},[f.email,f.telefon].filter(Boolean).join(' · ')),e('p',{class:'record-note'},'Čeka pregled pre prenosa · Netlify ID: '+p.original.submissionId),e('pre',{},JSON.stringify(f,null,2))));});
-      root.append(box);
-    }
   }
   function manual(){
     selected=null;view='inquiries';
@@ -69,8 +61,16 @@
   function drawRows(){
     const rows=$('#recordRows');rows.replaceChildren();
     const found=list.filter(r=>(!filter||r.document.status===filter)&&(!source||r.source===source)&&(!search||[r.id,...Object.values(r.document).filter(x=>typeof x==='string')].join(' ').toLowerCase().includes(search.toLowerCase())));
-    if(!found.length)rows.append(e('div',{class:'record-empty'},list.length?'Nema upita za ovu pretragu.':'Još nema upita. Novi potvrđeni upiti će ovde dobiti karton.'));
-    found.forEach(r=>{const d=r.document;rows.append(e('div',{class:'record-row'},e('div',{},e('strong',{},d.name||d.company||'Bez naziva'),d.isTest?e('span',{class:'record-badge test'},'TEST'):null,e('small',{},d.company||d.email||d.phone),e('small',{},r.id)),e('div',{class:'record-source'},r.source,e('small',{},day(r.received_at))),e('div',{class:'record-price'},money(d.agreedPrice??d.quotedPrice),e('small',{},d.status==='Odbijeno'?'Ranija cena':d.agreedPrice!=null?'Dogovoreno':'Ponuda')),e('div',{class:'record-row-actions'},e('span',{class:'record-badge'},d.status),d.decisionDate?e('small',{},'Odluka: '+day(d.decisionDate)):null,btn('Otvori karton',()=>open(r.id),'small'))));});
+    if(!found.length)rows.append(e('div',{class:'record-empty'},showArchived?'Arhiva je prazna.':list.length?'Nema upita za ovu pretragu.':'Još nema upita. Novi potvrđeni upiti će ovde dobiti karton.'));
+    found.forEach(r=>{const d=r.document;rows.append(e('div',{class:'record-row'},e('div',{},e('strong',{},d.name||d.company||'Bez naziva'),d.isTest?e('span',{class:'record-badge test'},'TEST'):null,e('small',{},d.company||d.email||d.phone),e('small',{},r.id)),e('div',{class:'record-source'},r.source,e('small',{},day(r.received_at))),e('div',{class:'record-price'},money(d.agreedPrice??d.quotedPrice),e('small',{},d.status==='Odbijeno'?'Ranija cena':d.agreedPrice!=null?'Dogovoreno':'Ponuda')),e('div',{class:'record-row-actions'},e('span',{class:'record-badge'},d.status),d.decisionDate?e('small',{},'Odluka: '+day(d.decisionDate)):null,btn('Otvori karton',()=>open(r.id),'small'),btn(showArchived?'Vrati upit':'Ukloni upit',()=>archiveRecord(r,showArchived),showArchived?'ghost small':'ghost small record-remove'))));});
+  }
+  async function archiveRecord(r,restore=false){
+    if(busy)return;
+    if($('#recordForm')?.dataset.dirty==='true'){error(Error('Prvo sačuvaj izmene kartona.'));return;}
+    if(!restore&&!confirm('Ukloni upit „'+(r.document.name||r.document.company||r.id)+'“ iz aktivne evidencije? Karton ostaje u arhivi i može da se vrati.'))return;
+    busy=true;root.querySelectorAll('button').forEach(b=>b.disabled=true);
+    try{await api('/'+r.id,{method:'PATCH',json:{action:restore?'restore':'archive',revision:r.revision}});await load();root.prepend(e('p',{class:'record-note',role:'status'},restore?'✓ Upit je vraćen u aktivnu evidenciju.':'✓ Upit je uklonjen. Možeš da ga vratiš iz arhive.'));}
+    catch(err){error(err);}finally{busy=false;root.querySelectorAll('button').forEach(b=>b.disabled=false);}
   }
   function field(label,key,type='text',wide=false){const d=selected.document;const input=type==='textarea'?e('textarea',{name:key},d[key]||''):type==='select'?e('select',{name:key},...STATUSES.map(s=>e('option',{value:s},s))):e('input',{name:key,type,value:d[key]??'',...(type==='number'?{min:'0',step:'.01'}:{})});if(type==='select')input.value=d[key];return e('label',{class:wide?'wide':''},label,input);}
   function group(title,fields){return e('details',{},e('summary',{},title),e('div',{class:'record-fields'},...fields.map(f=>field(...f))));}
@@ -80,7 +80,16 @@
     root.append(e('h2',{class:'record-heading',tabindex:'-1'},d.name||d.company||'Karton upita'));
     root.append(e('p',{class:'record-note'},[d.company,d.email,d.phone,d.address,d.postalCode].filter(Boolean).join(' · ')));
     if(d.isTest)root.append(e('div',{class:'record-alert'},'TEST UPIT · Nije stvarna narudžbina.'));
+    if(d.archivedAt){
+      root.append(e('div',{class:'record-alert'},'Ovaj upit je uklonjen iz aktivne evidencije · '+day(d.archivedAt)),btn('Vrati upit',()=>archiveRecord(r,true),''),e('section',{class:'record-request-summary'},e('strong',{},'Zahtev kupca'),e('p',{},d.request||d.products||'Nije uneto')),e('details',{},e('summary',{},'Originalni upit i kalkulacija'),e('pre',{},JSON.stringify(r.original,null,2))),e('details',{},e('summary',{},'Istorija promena · '+r.history.length),...r.history.map(h=>e('p',{class:'record-note'},'Verzija '+h.revision+' · '+new Date(h.at).toLocaleString('sr-Latn-RS')+' · '+historyTitle(h.kind)))));return;
+    }
+    root.append(e('div',{class:'record-actions'},btn('Ukloni upit',()=>archiveRecord(r),'ghost small record-remove')));
     root.append(e('div',{class:'record-decision-actions'},e('span',{class:'record-badge'},d.status+(d.decisionDate?' · '+day(d.decisionDate):'')),btn('Dogovoren posao',()=>decision('Prihvaćeno'),''),btn('Odbijeno',()=>decision('Odbijeno'),'ghost'),btn('Izmeni cenu / datum',()=>editDecision(),'ghost small'),e('p',{class:'record-note'},'Jedan klik beleži ishod i današnji datum. Dogovor koristi poslednju ponuđenu cenu; ako cena nedostaje, unesi samo iznos.')));
+    const flow=$('.record-decision-actions');
+    if(r.original.submissionId&&!r.original.inquiryId&&d.status!=='Završeno')flow.append(btn('Označi kao završeno',()=>mutate({action:'historical-complete'}),'ghost small'));
+    if(d.status==='Ponuda poslata')flow.append(btn('Čeka odgovor',()=>mutate({action:'update',patch:{status:'Čeka odgovor'}}),'ghost small'));
+    if(d.status==='Prihvaćeno')flow.append(btn('Počni montažu',()=>mutate({action:'start-installation'}),'ghost small'));
+    if(d.status==='Montaža')flow.append(btn('Završi posao',()=>mutate({action:'complete'}),'ghost small'));
     root.append(e('div',{id:'decisionInline'}));
     const paid=d.payments.reduce((sum,p)=>sum+p.amount,0),agreed=['Prihvaćeno','Montaža','Završeno'].includes(d.status),base=d.invoiceAmount??(agreed?d.agreedPrice:null);
     root.append(e('div',{class:'record-facts'},...[["Izračunata / poslednja ponuda",d.quotedPrice??r.original.price],[d.status==='Odbijeno'&&d.agreedPrice!=null?"Ranije zabeležena cena":"Dogovorena cena",d.agreedPrice],["Uplaćeno",paid],["Preostalo",base==null?null:Math.max(0,base-paid)]].map(([label,n])=>e('div',{},e('small',{},label),e('strong',{},money(n))))));

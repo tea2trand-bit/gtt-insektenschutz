@@ -50,7 +50,25 @@ const dates = ["offerSentAt", "decisionDate", "measuredAt", "orderedAt", "appoin
 export function applyChange(current: any, body: any, today = new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Zurich'})) {
   const d = structuredClone(current);
   const kind = body.action || "update";
-  if (kind === "decision") {
+  if(d.archivedAt&&!['archive','restore'].includes(kind))throw new RecordError("Upit je uklonjen iz aktivne evidencije. Prvo ga vrati iz arhive.",409);
+  if(kind==='archive'){
+    if(d.archivedAt)throw new RecordError("Upit je već u arhivi.",409);
+    d.archivedAt=new Date().toISOString();
+  }else if(kind==='restore'){
+    if(!d.archivedAt)throw new RecordError("Upit nije u arhivi.",409);
+    d.archivedAt='';d.restoredAt=new Date().toISOString();
+  }else if(kind==='historical-complete'){
+    d.status='Završeno';d.historicalClosedAt=new Date().toISOString();
+  }else if(kind==='start-installation'||kind==='complete'){
+    if(!d.decisionDate||d.agreedPrice==null)throw new RecordError("Prvo zabeleži dogovor i cenu.");
+    if(kind==='start-installation'){
+      if(d.status!=='Prihvaćeno')throw new RecordError("Montaža počinje posle prihvatanja ponude.");
+      d.status='Montaža';
+    }else{
+      if(d.status!=='Montaža')throw new RecordError("Prvo zabeleži montažu.");
+      d.status='Završeno';d.installedAt=d.installedAt||today;
+    }
+  }else if (kind === "decision") {
     if(!['Prihvaćeno','Odbijeno'].includes(body.status))throw new RecordError("Izaberi ishod upita.");
     if(body.status==='Prihvaćeno'){
       const price=body.agreedPrice!==undefined?amount(body.agreedPrice):(d.quotedPrice??d.agreedPrice);
@@ -130,6 +148,7 @@ export async function readRecord(db: QueryDB, id: string) {
 export async function changeRecord(db: QueryDB, id: string, body: any, actor = "Admin (zajednička prijava)") {
   const current = await readRecord(db,id);
   if (!Number.isInteger(body.revision) || body.revision !== current.revision) throw new RecordError("Karton je u međuvremenu izmenjen. Osveži ga pre čuvanja.",409);
+  if(body.action==='historical-complete'&&(!current.original.submissionId||current.original.inquiryId))throw new RecordError("Prečica za završetak važi samo za ranije prenete upite.",403);
   const change = applyChange(current.document,body);
   const {rows} = await db.query(`WITH changed AS (
     UPDATE gtt_records SET document=$3::jsonb,revision=revision+1,updated_at=now() WHERE id=$1 AND revision=$2 RETURNING *

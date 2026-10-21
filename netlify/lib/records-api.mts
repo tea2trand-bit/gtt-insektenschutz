@@ -40,7 +40,8 @@ export async function recordsAPI(req: Request, db: QueryDB, path: string[]) {
     return reply({error:"Metod nije dozvoljen."},405);
   }
   if (!id && method === "GET") {
-    const {rows} = await db.query("SELECT id,source,received_at,updated_at,revision,document FROM gtt_records ORDER BY received_at DESC LIMIT 1000");
+    const archived=new URL(req.url).searchParams.get('archived')==='1';
+    const {rows} = await db.query("SELECT id,source,received_at,updated_at,revision,document FROM gtt_records WHERE (COALESCE(document->>'archivedAt','')<>'')=$1 ORDER BY received_at DESC LIMIT 1000",[archived]);
     return reply({records:rows});
   }
   if (id === "import" && method === "POST") {
