@@ -16,6 +16,8 @@ Raniji Netlify zapisi mogu se uvesti u adminu kao JSON niz sa `id`, `form_name`,
 
 „Dodaj klijenta“ unosi klijenta bez javne platforme, sa imenom ili firmom i telefonom ili emailom; ostala polja su neobavezna. Novi zapis koristi izvor Ručni unos, dobija stabilan ID i istoriju, i ne šalje email. Raniji upiti koji čekaju korisnikov pregled čuvaju se odvojeno u `gtt_pending_inquiries` i vide samo kroz admin API, bez pretvaranja u operativne poslove.
 
+„Zakaži termin montaže“ je dostupan uz dogovoren posao. Administrator bira lokalni datum/vreme (Europe/Zurich) i neobaveznu napomenu; kupac i adresa dolaze iz kartona. Pregled Montaže prikazuje predstojeće aktivne termine sa vezom do kartona. Promena i otkazivanje su nove verzije istorije; ovo ne šalje kalendarske pozive ili poruke.
+
 ## Lokalni pregled
 
 Node >=22.12 (preporučeno24), `npm ci`, `npm run preview:admin`. Adresa: `http://127.0.0.1:4400/admin`, lokalna lozinka `gtt-demo-local`. PGlite izvršava pravi Postgres SQL i čuva podatke u `.local-records/db`. Ovaj folder je ignorisan u Gitu i ne ulazi u build. Operativni demo kartoni su označeni TEST. Poseban privatni istorijski spisak sadrži podatke korisnika koji čekaju pregled; ne koristiti ih za demonstracije. Postojeća galerija/akcija u ovom lokalnom pregledu su izolovani primeri; evidencija koristi stvarnu lokalnu bazu.

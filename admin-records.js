@@ -1,13 +1,16 @@
 (() => {
   const root = document.getElementById('recordsRoot');
   const STATUSES=['Novi upit','Ponuda poslata','Čeka odgovor','Prihvaćeno','Odbijeno','Montaža','Završeno'];
+  const historyTitle=kind=>({created:'Karton otvoren',payment:'Zabeležena uplata',complaint:'Izmenjena reklamacija',decision:'Zabeležen ishod upita',appointment:'Zabeležen termin montaže','cancel-appointment':'Otkazan termin montaže',quote:'Pripremljena nova ponuda'}[kind]||'Sačuvan karton');
   const $=(s)=>root.querySelector(s);
   const money=n=>n==null?'Nije uneto':new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF'}).format(n);
   const day=s=>s?new Date(s).toLocaleDateString('sr-Latn-RS'):'—';
   const today=()=>new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Zurich'});
   const e=(tag,attrs={},...children)=>{const n=document.createElement(tag);for(const[k,v]of Object.entries(attrs)){if(k.startsWith('on'))n.addEventListener(k.slice(2),v);else if(k==='class')n.className=v;else if(v!=null)n.setAttribute(k,v);}children.flat().forEach(c=>c!=null&&n.append(c));return n;};
   const btn=(label,fn,kind='ghost small')=>e('button',{type:'button',class:'btn '+kind,onclick:fn},label);
-  let list=[],pending=[],selected=null,filter='',search='',source='',busy=false;
+  let list=[],pending=[],selected=null,filter='',search='',source='',busy=false,view='inquiries';
+  const hasAppointment=d=>d.appointmentAt&&d.appointmentTime&&d.appointmentStatus!=='cancelled'&&['Prihvaćeno','Montaža'].includes(d.status);
+  const appointmentText=d=>day(d.appointmentAt)+' u '+d.appointmentTime;
   async function api(path='',opts={}){
     const token=sessionStorage.getItem('gttAdminToken');
     const headers={Authorization:'Bearer '+(token||'')};
@@ -24,6 +27,14 @@
   function renderList(){
     selected=null;root.replaceChildren(e('div',{class:'record-head'},e('div',{},e('h2',{},'Upiti / Anfragen'),e('p',{class:'record-note'},'Svaki upit ima svoj karton. Prihvatanje i odbijanje beleže se posebno.')),e('div',{class:'record-actions'},btn('Dodaj klijenta',manual,''),btn('Osveži',load))));
     if(window.location.hostname==='127.0.0.1'||window.location.hostname==='localhost')root.append(e('div',{class:'record-alert'},'LOKALNI PREGLED · Samo označeni test podaci. Promene se čuvaju lokalno.'));
+    const now=new Date().toLocaleString('sv-SE',{timeZone:'Europe/Zurich'}).slice(0,16).replace(' ','T');
+    const appointments=list.filter(r=>hasAppointment(r.document)&&(r.document.appointmentAt+'T'+r.document.appointmentTime)>=now).sort((a,b)=>(a.document.appointmentAt+a.document.appointmentTime).localeCompare(b.document.appointmentAt+b.document.appointmentTime));
+    root.append(e('div',{class:'record-actions'},btn('Upiti',()=>{view='inquiries';renderList();},view==='inquiries'?'small':'ghost small'),btn('Montaže · '+appointments.length,()=>{view='appointments';renderList();},view==='appointments'?'small':'ghost small')));
+    if(view==='appointments'){
+      root.append(e('h2',{style:'margin-top:20px'},'Predstojeće montaže'),e('p',{class:'record-note'},'Interni termini u švajcarskom lokalnom vremenu (Europe/Zurich).'));
+      if(!appointments.length)root.append(e('p',{class:'record-empty'},'Nema predstojećih zakazanih montaža. Termin zadaješ dugmetom „Zakaži termin montaže“ u dogovorenom poslu.'));
+      appointments.forEach(r=>{const d=r.document;root.append(e('div',{class:'record-row'},e('div',{},e('strong',{},d.name||d.company),e('small',{},d.isTest?'TEST · Nije stvarna poseta':'')),e('div',{},e('strong',{},appointmentText(d)),e('small',{},[d.address,d.postalCode].filter(Boolean).join(' · ')||'Adresa nije uneta')),e('div',{},d.phone||d.email,e('small',{},d.appointmentNote||'')),btn('Otvori karton',()=>open(r.id),'small')));});return;
+    }
     const counts=e('div',{class:'record-summary'});
     [['','Svi'],...STATUSES.map(s=>[s,s])].forEach(([s,label])=>counts.append(btn(label+' · '+list.filter(r=>!s||r.document.status===s).length,()=>{filter=s;renderList();},s===filter?'active':'')));
     root.append(counts);
@@ -31,7 +42,8 @@
     const sources=e('select',{'aria-label':'Izvor upita',onchange:ev=>{source=ev.target.value;drawRows();}},...['Svi izvori','Kalkulator','B2B','Kontakt','Ručni unos'].map(s=>e('option',{value:s==='Svi izvori'?'':s},s)));sources.value=source;
     root.append(e('div',{class:'record-toolbar'},input,sources),e('div',{id:'recordRows',class:'record-list'}));drawRows();
     const imp=e('input',{type:'file',accept:'.json,application/json','aria-label':'Netlify JSON za uvoz',onchange:async ev=>{try{const data=JSON.parse(await ev.target.files[0].text());const r=await api('/import',{method:'POST',json:{submissions:Array.isArray(data)?data:data.submissions}});await load();root.prepend(e('p',{class:'record-note'},`Uvezeno: ${r.created}. Već postoje: ${r.duplicates}.`));}catch(err){error(err);}}});
-    root.append(e('details',{},e('summary',{},'Uvoz ranijih Netlify upita'),e('p',{class:'record-note'},'Izvezi Netlify zapise kao JSON sa id, form_name, created_at i data. Uvoz prepoznaje iste ID-eve i čuva postojeće kartone.'),imp));
+    const stageInput=e('input',{type:'file',accept:'.json,application/json','aria-label':'Privatni spisak ranijih upita',onchange:async ev=>{try{const data=JSON.parse(await ev.target.files[0].text());const r=await api('/pending',{method:'POST',json:{submissions:Array.isArray(data)?data:data.submissions}});await load();root.prepend(e('p',{class:'record-note'},`Pripremljeno za pregled: ${r.staged}. Već postoje: ${r.duplicates}.`));}catch(err){error(err);}}});
+    root.append(e('details',{},e('summary',{},'Uvoz ranijih Netlify upita'),e('p',{class:'record-note'},'Uvoz prepoznaje izvorne ID-eve i čuva postojeće kartone. Ovde uvezi samo izabrane zapise koji treba da dobiju karton.'),imp,e('p',{class:'record-note'},'Ostale ranije upite možeš samo pripremiti na privatni spisak za pregled, bez prenosa u poslove.'),stageInput));
     if(pending.length){
       const box=e('details',{},e('summary',{},`Raniji upiti — čekaju pregled · ${pending.length}`),e('p',{class:'record-note'},'Ovo je privatni pregled originalnih podataka. Ovi upiti još nisu preneti u operativne kartone i nemaju zabeležen dogovor.'));
       pending.forEach(p=>{const f=p.original.fields;box.append(e('details',{},e('summary',{},`${f.name||f.firma||'Bez imena'} · ${p.source} · ${day(p.received_at)}`),e('p',{class:'record-note'},[f.email,f.telefon].filter(Boolean).join(' · ')),e('p',{class:'record-note'},'Čeka pregled pre prenosa · Netlify ID: '+p.original.submissionId),e('pre',{},JSON.stringify(f,null,2))));});
@@ -39,7 +51,7 @@
     }
   }
   function manual(){
-    selected=null;
+    selected=null;view='inquiries';
     const requestId=crypto.randomUUID();
     root.replaceChildren(btn('← Svi upiti',load),e('h2',{},'Dodaj klijenta'),e('p',{class:'record-note'},'Ručni unos za telefon, preporuku, WhatsApp ili lični kontakt. Dovoljni su ime ili firma i telefon ili email.'),e('p',{id:'recordError',class:'record-error',role:'alert'}));
     const f=e('form',{onsubmit:async ev=>{
@@ -65,20 +77,26 @@
   function renderRecord(){
     const r=selected,d=r.document;root.replaceChildren();
     root.append(e('div',{class:'record-head'},btn('← Svi upiti',()=>{if($('#recordForm')?.dataset.dirty==='true'&&!confirm('Napusti nesačuvane izmene?'))return;load();}),e('span',{class:'record-note'},r.id+' · '+r.source+' · '+day(r.received_at))));
-    root.append(e('h2',{class:'record-heading',tabindex:'-1'},d.name||'Karton upita'));
+    root.append(e('h2',{class:'record-heading',tabindex:'-1'},d.name||d.company||'Karton upita'));
     root.append(e('p',{class:'record-note'},[d.company,d.email,d.phone,d.address,d.postalCode].filter(Boolean).join(' · ')));
     if(d.isTest)root.append(e('div',{class:'record-alert'},'TEST UPIT · Nije stvarna narudžbina.'));
     root.append(e('div',{class:'record-decision-actions'},e('span',{class:'record-badge'},d.status+(d.decisionDate?' · '+day(d.decisionDate):'')),btn('Dogovoren posao',()=>decision('Prihvaćeno'),''),btn('Odbijeno',()=>decision('Odbijeno'),'ghost'),btn('Izmeni cenu / datum',()=>editDecision(),'ghost small'),e('p',{class:'record-note'},'Jedan klik beleži ishod i današnji datum. Dogovor koristi poslednju ponuđenu cenu; ako cena nedostaje, unesi samo iznos.')));
     root.append(e('div',{id:'decisionInline'}));
-    const paid=d.payments.reduce((sum,p)=>sum+p.amount,0),base=d.invoiceAmount??d.agreedPrice;
-    root.append(e('div',{class:'record-facts'},...[["Originalna kalkulacija",r.original.price],["Dogovorena cena",d.agreedPrice],["Uplaćeno",paid],["Preostalo",base==null?null:Math.max(0,base-paid)]].map(([label,n])=>e('div',{},e('small',{},label),e('strong',{},money(n))))));
+    const paid=d.payments.reduce((sum,p)=>sum+p.amount,0),agreed=['Prihvaćeno','Montaža','Završeno'].includes(d.status),base=d.invoiceAmount??(agreed?d.agreedPrice:null);
+    root.append(e('div',{class:'record-facts'},...[["Izračunata / poslednja ponuda",d.quotedPrice??r.original.price],[agreed?"Dogovorena cena":"Ranije zabeležena cena",d.agreedPrice],["Uplaćeno",paid],["Preostalo",base==null?null:Math.max(0,base-paid)]].map(([label,n])=>e('div',{},e('small',{},label),e('strong',{},money(n))))));
+    root.append(e('section',{class:'record-request-summary'},e('strong',{},'Zahtev kupca'),e('p',{},d.products||'Mere / proizvodi još nisu zabeleženi.'),d.request?e('p',{},d.request):null));
+    const appointmentBox=e('section',{class:'record-appointment'});
+    if(['Prihvaćeno','Montaža'].includes(d.status))appointmentBox.append(btn('Zakaži termin montaže',schedule,''));
+    if(hasAppointment(d))appointmentBox.append(e('p',{},e('strong',{},'Montaža: '+appointmentText(d)),e('span',{class:'record-note'},' · '+([d.address,d.postalCode].filter(Boolean).join(' · ')||'Adresa još nije uneta'))),d.appointmentNote?e('p',{class:'record-note'},d.appointmentNote):null,e('div',{class:'record-actions'},btn('Promeni termin',schedule),btn('Otkaži termin',()=>mutate({action:'cancel-appointment'}))));
+    else if(d.appointmentStatus==='cancelled')appointmentBox.append(e('p',{class:'record-note'},'Termin '+appointmentText(d)+' je otkazan. Raniji termin ostaje u istoriji.'));
+    if(appointmentBox.childNodes.length)root.append(appointmentBox);
+    root.append(e('div',{id:'appointmentInline'}));
     if(base!=null&&paid>base)root.append(e('p',{class:'record-note'},'Višak uplate: '+money(Math.round((paid-base)*100)/100)));
     root.append(e('p',{id:'recordError',class:'record-error',role:'alert'}));
     const form=e('form',{id:'recordForm',oninput:()=>form.dataset.dirty='true',onsubmit:async ev=>{ev.preventDefault();const patch=Object.fromEntries(new FormData(form));await mutate({action:'update',patch});}});
-    form.append(group('Kupac i zahtev',[["Ime i prezime","name"],["Firma","company"],["Email","email","email"],["Telefon","phone"],["Adresa montaže","address"],["Poštanski broj / mesto","postalCode"],["Proizvodi i mere","products","textarea",true],["Zahtev kupca","request","textarea",true],["Interne napomene","notes","textarea",true]]));
-    form.append(group('Ponuda, cena i odluka',[["Status","status","select"],["Ponuđena cena (CHF)","quotedPrice","number"],["Popust / akcija (opis)","discount"],["Dodatni troškovi (CHF)","extraCosts","number"],["Konačna dogovorena cena (CHF)","agreedPrice","number"],["Datum slanja ponude","offerSentAt","date"],["Datum prihvatanja / odbijanja","decisionDate","date"],["Razlog odluke","decisionReason"],["Dokaz dogovora (npr. naziv priloženog dokumenta)","decisionEvidence","textarea",true],["Poslata ponuda / tekst","offerText","textarea",true]]));
-    form.append(e('p',{class:'record-note'},'Ponuđena cena i dodatni troškovi su odvojena evidencija. Konačnu cenu upiši kao dogovoreni ukupan iznos. Status „Ponuda poslata“ označava ručno potvrđeno slanje.'));
-    form.append(group('Izvođenje posla',[["Merenje","measuredAt","date"],["Poručeno","orderedAt","date"],["Termin montaže","appointmentAt","date"],["Montirano","installedAt","date"],["Detalji posla / termin i vreme","workNotes","textarea",true]]));
+    form.append(group('Izmeni podatke klijenta / zahtev',[["Ime i prezime","name"],["Firma","company"],["Email","email","email"],["Telefon","phone"],["Adresa montaže","address"],["Poštanski broj / mesto","postalCode"],["Proizvodi i mere","products","textarea",true],["Zahtev kupca","request","textarea",true],["Interne napomene","notes","textarea",true]]));
+    form.append(group('Izmeni ponudu / detalje',[["Status","status","select"],["Poslednja ponuđena ukupna cena (CHF)","quotedPrice","number"],["Popust / akcija (opis)","discount"],["Dodatni troškovi (evidencija, CHF)","extraCosts","number"],["Konačna dogovorena cena (CHF)","agreedPrice","number"],["Datum slanja ponude","offerSentAt","date"],["Datum prihvatanja / odbijanja","decisionDate","date"],["Razlog odluke (neobavezno)","decisionReason"],["Dokaz dogovora (npr. naziv priloženog dokumenta)","decisionEvidence","textarea",true],["Poslata ponuda / tekst","offerText","textarea",true]]));
+    form.append(group('Izvođenje posla',[["Merenje","measuredAt","date"],["Poručeno","orderedAt","date"],["Montirano","installedAt","date"],["Detalji posla","workNotes","textarea",true]]));
     form.append(group('Račun',[["Broj računa","invoiceNumber"],["Iznos računa (CHF)","invoiceAmount","number"],["Datum računa","invoiceDate","date"],["Rok uplate","invoiceDue","date"]]));
     form.append(e('div',{class:'record-actions record-form-actions'},e('button',{type:'submit',class:'btn',id:'recordSave'},'Sačuvaj karton'),e('span',{class:'record-note'},'Originalni upit ostaje sačuvan. Svako čuvanje dobija verziju u istoriji.')));
     root.append(form);
@@ -86,7 +104,7 @@
     root.append(files());
     const original=e('details',{},e('summary',{},'Originalni upit i kalkulacija'),e('pre',{},JSON.stringify(r.original,null,2)));
     const history=e('details',{},e('summary',{},`Istorija promena · ${r.history.length}`));
-    r.history.forEach((h,i)=>{const old=r.history[i+1]?.snapshot||{};const changed=Object.keys(h.snapshot).filter(k=>JSON.stringify(h.snapshot[k])!==JSON.stringify(old[k]));history.append(e('div',{class:'record-log'},e('strong',{},`Verzija ${h.revision} · ${new Date(h.at).toLocaleString('sr-Latn-RS')}`),e('p',{},h.actor),e('p',{},h.kind==='created'?'Karton otvoren':h.kind==='payment'?'Zabeležena uplata':h.kind==='complaint'?'Izmenjena reklamacija':'Sačuvan karton'),e('details',{},e('summary',{},'Pogledaj zabeležene vrednosti'),e('pre',{},JSON.stringify(Object.fromEntries(changed.map(k=>[k,{pre:old[k]??null,posle:h.snapshot[k]}])),null,2)))));});
+    r.history.forEach((h,i)=>{const old=r.history[i+1]?.snapshot||{};const changed=Object.keys(h.snapshot).filter(k=>JSON.stringify(h.snapshot[k])!==JSON.stringify(old[k]));history.append(e('div',{class:'record-log'},e('strong',{},`Verzija ${h.revision} · ${new Date(h.at).toLocaleString('sr-Latn-RS')}`),e('p',{},h.actor),e('p',{},historyTitle(h.kind)),e('details',{},e('summary',{},'Pogledaj zabeležene vrednosti'),e('pre',{},JSON.stringify(Object.fromEntries(changed.map(k=>[k,{pre:old[k]??null,posle:h.snapshot[k]}])),null,2)))));});
     root.append(original,history);
   }
   async function decision(status){
@@ -98,6 +116,11 @@
     await mutate({action:'decision',status});
   }
   function editDecision(){const target=$('#recordForm [name=agreedPrice]');target.closest('details').open=true;target.focus();target.scrollIntoView({block:'center',behavior:'smooth'});}
+  function schedule(){
+    const d=selected.document;
+    const f=e('form',{class:'record-alert',onsubmit:async ev=>{ev.preventDefault();await mutate({action:'appointment',...Object.fromEntries(new FormData(f))});}},e('strong',{},'Zakaži termin montaže'),e('p',{class:'record-note'},[d.name||d.company,d.address,d.postalCode].filter(Boolean).join(' · ')),e('div',{class:'record-fields'},e('label',{},'Datum montaže',e('input',{type:'date',name:'date',value:d.appointmentAt||today(),required:true})),e('label',{},'Vreme montaže',e('input',{type:'time',name:'time',value:d.appointmentTime||'',required:true})),e('label',{class:'wide'},'Kratka napomena (neobavezno)',e('input',{name:'note',value:d.appointmentNote||'',maxlength:'2000'}))),e('p',{class:'record-note'},'Švajcarsko lokalno vreme. Čuva se interni termin; poruke ili kalendarski pozivi se ne šalju.'),e('button',{type:'submit',class:'btn'},'Sačuvaj termin'));
+    $('#appointmentInline').replaceChildren(f);f.querySelector('[name=date]').focus();f.scrollIntoView({block:'center',behavior:'smooth'});
+  }
   async function mutate(body){if(busy)return;if(body.action!=='update'&&$('#recordForm')?.dataset.dirty==='true'){error(Error('Prvo sačuvaj izmene kartona.'));return;}busy=true;root.querySelectorAll('button').forEach(b=>b.disabled=true);try{selected=(await api('/'+selected.id,{method:'PATCH',json:{...body,revision:selected.revision}})).record;renderRecord();root.prepend(e('p',{class:'record-note',role:'status'},'✓ Sačuvano · verzija '+selected.revision));}catch(err){error(err);}finally{busy=false;root.querySelectorAll('button').forEach(b=>b.disabled=false);}}
   function payments(){
     const box=e('section',{class:'card'},e('h2',{},'Uplate'),e('p',{class:'record-note'},'Ručna evidencija primljenih uplata.'));

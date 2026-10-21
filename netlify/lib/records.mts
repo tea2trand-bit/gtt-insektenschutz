@@ -40,7 +40,7 @@ export function fromSubmission(data: Record<string, unknown>, meta: {id?: string
     request: text(data.nachricht), notes: "", status: "Novi upit", isTest: /^TEST\b/i.test(text(data.name)),
     quotedPrice: original.price, extraCosts: 0, discount: text(data.aktion, 400), agreedPrice: null,
     offerText: "", offerSentAt: "", decisionDate: "", decisionReason: "", decisionEvidence: "",
-    measuredAt: "", orderedAt: "", appointmentAt: "", installedAt: "", workNotes: "",
+    measuredAt: "", orderedAt: "", appointmentAt: "", appointmentTime: "", appointmentNote: "", appointmentStatus: "", installedAt: "", workNotes: "",
     invoiceNumber: "", invoiceAmount: null, invoiceDate: "", invoiceDue: "", payments: [], complaints: [],
   };
   return { id, source: sources[form], original, document };
@@ -60,6 +60,15 @@ export function applyChange(current: any, body: any, today = new Date().toLocale
     d.status=body.status;
     d.decisionDate=today;
     if(body.reason!==undefined)d.decisionReason=text(body.reason,2000);
+  } else if (kind === "appointment") {
+    if(!['Prihvaćeno','Montaža'].includes(d.status))throw new RecordError("Prvo zabeleži da je posao dogovoren.");
+    const at=date(body.date),time=text(body.time,5);
+    if(!at||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))throw new RecordError("Izaberi datum i vreme montaže.");
+    d.appointmentAt=at;d.appointmentTime=time;d.appointmentNote=text(body.note,2000);d.appointmentStatus='scheduled';
+    d.appointmentChangedAt=new Date().toISOString();
+  } else if (kind === "cancel-appointment") {
+    if(!d.appointmentAt||d.appointmentStatus==='cancelled')throw new RecordError("Nema aktivnog termina za otkazivanje.");
+    d.appointmentStatus='cancelled';d.appointmentCancelledAt=new Date().toISOString();d.appointmentCancelReason=text(body.reason,2000);
   } else if (kind === "update") {
     const patch = body.patch;
     if (!patch || typeof patch !== "object" || Array.isArray(patch)) throw new RecordError("Nedostaju polja kartona.");
