@@ -1,7 +1,7 @@
 (() => {
   const root = document.getElementById('recordsRoot');
   const STATUSES=['Novi upit','Ponuda poslata','Čeka odgovor','Prihvaćeno','Odbijeno','Montaža','Završeno'];
-  const historyTitle=kind=>({created:'Karton otvoren',payment:'Zabeležena uplata',complaint:'Izmenjena reklamacija',decision:'Zabeležen ishod upita',appointment:'Zabeležen termin montaže','cancel-appointment':'Otkazan termin montaže',quote:'Pripremljena nova ponuda'}[kind]||'Sačuvan karton');
+  const historyTitle=kind=>({created:'Karton otvoren',payment:'Zabeležena uplata',complaint:'Izmenjena reklamacija',decision:'Zabeležen ishod upita',appointment:'Zabeležen termin montaže','cancel-appointment':'Otkazan termin montaže',quote:'Pripremljena nova ponuda',quote_intake:'Automatski izdvojene mere i obračun',quote_email:'Obrađeno slanje poruke kupcu'}[kind]||'Sačuvan karton');
   const $=(s)=>root.querySelector(s);
   const money=n=>n==null?'Nije uneto':new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF'}).format(n);
   const day=s=>s?new Date(s).toLocaleDateString('sr-Latn-RS'):'—';
@@ -70,7 +70,7 @@
     const rows=$('#recordRows');rows.replaceChildren();
     const found=list.filter(r=>(!filter||r.document.status===filter)&&(!source||r.source===source)&&(!search||[r.id,...Object.values(r.document).filter(x=>typeof x==='string')].join(' ').toLowerCase().includes(search.toLowerCase())));
     if(!found.length)rows.append(e('div',{class:'record-empty'},list.length?'Nema upita za ovu pretragu.':'Još nema upita. Novi potvrđeni upiti će ovde dobiti karton.'));
-    found.forEach(r=>{const d=r.document;rows.append(e('div',{class:'record-row'},e('div',{},e('strong',{},d.name||'Bez imena'),d.isTest?e('span',{class:'record-badge test'},'TEST'):null,e('small',{},d.company||d.email||d.phone),e('small',{},r.id)),e('div',{class:'record-source'},r.source,e('small',{},day(r.received_at))),e('div',{class:'record-price'},money(d.agreedPrice??d.quotedPrice),e('small',{},d.agreedPrice!=null?'Dogovoreno':'Ponuda')),e('div',{class:'record-row-actions'},e('span',{class:'record-badge'},d.status),d.decisionDate?e('small',{},'Odluka: '+day(d.decisionDate)):null,btn('Otvori karton',()=>open(r.id),'small'))));});
+    found.forEach(r=>{const d=r.document;rows.append(e('div',{class:'record-row'},e('div',{},e('strong',{},d.name||d.company||'Bez naziva'),d.isTest?e('span',{class:'record-badge test'},'TEST'):null,e('small',{},d.company||d.email||d.phone),e('small',{},r.id)),e('div',{class:'record-source'},r.source,e('small',{},day(r.received_at))),e('div',{class:'record-price'},money(d.agreedPrice??d.quotedPrice),e('small',{},d.status==='Odbijeno'?'Ranija cena':d.agreedPrice!=null?'Dogovoreno':'Ponuda')),e('div',{class:'record-row-actions'},e('span',{class:'record-badge'},d.status),d.decisionDate?e('small',{},'Odluka: '+day(d.decisionDate)):null,btn('Otvori karton',()=>open(r.id),'small'))));});
   }
   function field(label,key,type='text',wide=false){const d=selected.document;const input=type==='textarea'?e('textarea',{name:key},d[key]||''):type==='select'?e('select',{name:key},...STATUSES.map(s=>e('option',{value:s},s))):e('input',{name:key,type,value:d[key]??'',...(type==='number'?{min:'0',step:'.01'}:{})});if(type==='select')input.value=d[key];return e('label',{class:wide?'wide':''},label,input);}
   function group(title,fields){return e('details',{},e('summary',{},title),e('div',{class:'record-fields'},...fields.map(f=>field(...f))));}
@@ -84,7 +84,9 @@
     root.append(e('div',{id:'decisionInline'}));
     const paid=d.payments.reduce((sum,p)=>sum+p.amount,0),agreed=['Prihvaćeno','Montaža','Završeno'].includes(d.status),base=d.invoiceAmount??(agreed?d.agreedPrice:null);
     root.append(e('div',{class:'record-facts'},...[["Izračunata / poslednja ponuda",d.quotedPrice??r.original.price],[agreed?"Dogovorena cena":"Ranije zabeležena cena",d.agreedPrice],["Uplaćeno",paid],["Preostalo",base==null?null:Math.max(0,base-paid)]].map(([label,n])=>e('div',{},e('small',{},label),e('strong',{},money(n))))));
-    root.append(e('section',{class:'record-request-summary'},e('strong',{},'Zahtev kupca'),e('p',{},d.products||'Mere / proizvodi još nisu zabeleženi.'),d.request?e('p',{},d.request):null));
+    const extracted=(d.intake?.measurements||[]).map(m=>(m.type==='window'?'Prozori':'Vrata / plise')+': '+(m.mode==='dimensions'?`${m.quantity} × ${m.width} ${m.widthUnit} × ${m.height} ${m.heightUnit} · `:'')+Number(m.areaM2).toLocaleString('de-CH',{maximumFractionDigits:4})+' m²').join('\n');
+    root.append(e('section',{class:'record-request-summary'},e('strong',{},'Zahtev kupca'),e('p',{},extracted||d.products||'Mere / proizvodi još nisu zabeleženi.'),d.request?e('p',{},d.request):null));
+    if(d.intake)root.append(intakeSummary(d.intake));
     const appointmentBox=e('section',{class:'record-appointment'});
     if(['Prihvaćeno','Montaža'].includes(d.status))appointmentBox.append(btn('Zakaži termin montaže',schedule,''));
     if(hasAppointment(d))appointmentBox.append(e('p',{},e('strong',{},'Montaža: '+appointmentText(d)),e('span',{class:'record-note'},' · '+([d.address,d.postalCode].filter(Boolean).join(' · ')||'Adresa još nije uneta'))),d.appointmentNote?e('p',{class:'record-note'},d.appointmentNote):null,e('div',{class:'record-actions'},btn('Promeni termin',schedule),btn('Otkaži termin',()=>mutate({action:'cancel-appointment'}))));
@@ -120,6 +122,24 @@
     const d=selected.document;
     const f=e('form',{class:'record-alert',onsubmit:async ev=>{ev.preventDefault();await mutate({action:'appointment',...Object.fromEntries(new FormData(f))});}},e('strong',{},'Zakaži termin montaže'),e('p',{class:'record-note'},[d.name||d.company,d.address,d.postalCode].filter(Boolean).join(' · ')),e('div',{class:'record-fields'},e('label',{},'Datum montaže',e('input',{type:'date',name:'date',value:d.appointmentAt||today(),required:true})),e('label',{},'Vreme montaže',e('input',{type:'time',name:'time',value:d.appointmentTime||'',required:true})),e('label',{class:'wide'},'Kratka napomena (neobavezno)',e('input',{name:'note',value:d.appointmentNote||'',maxlength:'2000'}))),e('p',{class:'record-note'},'Švajcarsko lokalno vreme. Čuva se interni termin; poruke ili kalendarski pozivi se ne šalju.'),e('button',{type:'submit',class:'btn'},'Sačuvaj termin'));
     $('#appointmentInline').replaceChildren(f);f.querySelector('[name=date]').focus();f.scrollIntoView({block:'center',behavior:'smooth'});
+  }
+  function intakeSummary(intake){
+    const box=e('section',{class:'record-request-summary'},e('h3',{},intake.status==='priced'?'Automatski pripremljena ponuda':'Potrebna je dopuna upita'));
+    const quote=intake.quote;
+    if(quote){
+      const number='GTT-'+selected.id.replace(/^GTT-/,'').slice(0,8).toUpperCase()+'-'+String(intake.version||quote.version||1).padStart(3,'0');
+      box.append(e('p',{class:'record-note'},'Ponuda '+number+' · '+day(quote.calculatedAt||intake.processedAt)));
+      const rows=e('div',{class:'record-quote-lines'});
+      for(const [key,label]of [['fenster','Prozori'],['tueren','Vrata / plise']])if(quote.areas?.[key])rows.append(e('div',{},e('span',{},label+' · '+Number(quote.areas[key]).toLocaleString('de-CH',{maximumFractionDigits:4})+' m²'),e('span',{},money(quote.rates[key])+' / m²')));
+      rows.append(e('div',{},e('strong',{},'Ukupna ponuda'),e('strong',{},money(quote.totalCHF))));box.append(rows);
+      if(quote.discount)box.append(e('p',{class:'record-note'},quote.discount.name+' · '+quote.discount.percent+'% već uračunato u jedinične cene.'));
+    }
+    const questions=intake.clarification||[];
+    if(questions.length)box.append(e('p',{class:'record-note'},'Podaci koji nedostaju / potrebna provera:'),e('ul',{},...questions.map(q=>e('li',{},typeof q==='string'?q:q.question))));
+    const emailStatus={preview_only:'Test pregled: poruka nije poslata.',queued:'Poruka čeka slanje.',sending:'Slanje poruke je u toku.',accepted:'Poruka je predata email servisu. Prijem u sandučetu je zasebna provera.',failed:'Slanje poruke nije uspelo; potreban je pregled.',not_available:'Email kupca nije zabeležen; poruka nije poslata.',blocked:'Slanje čeka proveru podešavanja.',manual_review:'Potrebna je stručna provera.'}[intake.email?.status]||'Status slanja se proverava.';
+    box.append(e('p',{class:'record-note'},emailStatus),btn(quote?'Pogledaj ponudu':'Pogledaj poruku za dopunu',async()=>{
+      try{const data=await api('/'+selected.id+'/offer');const frame=e('iframe',{title:'Pregled ponude kupcu',sandbox:'',srcdoc:data.html,style:'width:100%;height:70vh;border:0'});const dialog=e('dialog',{class:'record-offer-dialog'},e('div',{class:'record-head'},e('strong',{},data.reference||'Pregled ponude'),btn('Zatvori',()=>{dialog.close();dialog.remove();})),frame);document.body.append(dialog);dialog.showModal();}catch(err){error(err);}
+    }));return box;
   }
   async function mutate(body){if(busy)return;if(body.action!=='update'&&$('#recordForm')?.dataset.dirty==='true'){error(Error('Prvo sačuvaj izmene kartona.'));return;}busy=true;root.querySelectorAll('button').forEach(b=>b.disabled=true);try{selected=(await api('/'+selected.id,{method:'PATCH',json:{...body,revision:selected.revision}})).record;renderRecord();root.prepend(e('p',{class:'record-note',role:'status'},'✓ Sačuvano · verzija '+selected.revision));}catch(err){error(err);}finally{busy=false;root.querySelectorAll('button').forEach(b=>b.disabled=false);}}
   function payments(){
