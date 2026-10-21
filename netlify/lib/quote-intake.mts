@@ -38,9 +38,10 @@ export async function prepareQuoteIntake(data:Record<string,string>,context:any=
   }
   const offer=options.offer || await readOffer(projectsStore(context));
   const result=priceExtraction(extraction,form,offer,options.now);
+  const measurementRequired=!result.quote&&!result.manualReview&&!extraction.measurements.length&&extraction.issues.some(i=>i.code==='missing_dimensions');
   const recipient=(data.email||"").trim();
   const preview=options.mode==="preview" || !production(context);
-  return {schemaVersion:INTAKE_VERSION,status:result.status,sourceFingerprint:sourceFingerprint(data),processedAt:(options.now||new Date()).toISOString(),method:extraction.method,ai,measurements:extraction.measurements,postalCode:extraction.postalCode,clarification:result.issues,manualReview:result.manualReview,quote:result.quote,estimate:result.estimate,customer:{name:(data.name||"").trim(),company:(data.firma||"").trim(),email:recipient,phone:(data.telefon||"").trim(),address:(data.adresse||"").trim()},email:{status:!emailValid(recipient)?"not_available":preview?"preview_only":"queued"},contractAccepted:false};
+  return {schemaVersion:INTAKE_VERSION,status:result.status,measurementRequired,sourceFingerprint:sourceFingerprint(data),processedAt:(options.now||new Date()).toISOString(),method:extraction.method,ai,measurements:extraction.measurements,postalCode:extraction.postalCode,clarification:result.issues,manualReview:result.manualReview,quote:result.quote,estimate:result.estimate,customer:{name:(data.name||"").trim(),company:(data.firma||"").trim(),email:recipient,phone:(data.telefon||"").trim(),address:(data.adresse||"").trim()},email:{status:!emailValid(recipient)?"not_available":preview?"preview_only":"queued"},contractAccepted:false};
 }
 
 export async function processQuoteIntake(db:QueryDB,recordId:string,originalData:Record<string,string>,context:any={},options:IntakeOptions={}) {

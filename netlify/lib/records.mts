@@ -128,6 +128,38 @@ export function applyChange(current: any, body: any, today = new Date().toLocale
 }
 
 export interface QueryDB { query: (sql: string, params?: any[]) => Promise<{ rows: any[] }> }
+export async function deleteArchivedTestRecord(db: QueryDB,id:string,revision:number){
+  const current=await readRecord(db,id);
+  if(!Number.isInteger(revision)||revision!==current.revision)throw new RecordError("Karton je u međuvremenu izmenjen. Osveži ga pre čuvanja.",409);
+  if(!current.document.archivedAt||current.document.isTest!==true)throw new RecordError("Trajno uklanjanje važi samo za arhivirane TEST upite.",403);
+  // One statement is atomic. Recheck state under the row lock and remove dependent
+  // admin rows before their parents. Never contact Forms or an email provider.
+  const {rows}=await db.query(`WITH target AS MATERIALIZED (
+    SELECT id FROM gtt_records r WHERE id=$1 AND revision=$2
+      AND document->'isTest'='true'::jsonb AND COALESCE(document->>'archivedAt','')<>''
+      AND NOT EXISTS(SELECT 1 FROM gtt_quote_outbox WHERE record_id=r.id AND status IN ('queued','processing'))
+      AND NOT EXISTS(SELECT 1 FROM gtt_team_outbox WHERE record_id=r.id AND status IN ('queued','processing'))
+    FOR UPDATE
+  ), removed_team AS (
+    DELETE FROM gtt_team_outbox o USING target t WHERE o.record_id=t.id RETURNING o.id
+  ), removed_outbox AS (
+    DELETE FROM gtt_quote_outbox o USING target t WHERE o.record_id=t.id RETURNING o.id
+  ), removed_versions AS (
+    DELETE FROM gtt_quote_versions v USING target t WHERE v.record_id=t.id
+      AND (SELECT count(*) FROM removed_outbox)>=0 RETURNING v.version
+  ), removed_history AS (
+    DELETE FROM gtt_record_history h USING target t WHERE h.record_id=t.id RETURNING h.record_id
+  ), removed_files AS (
+    DELETE FROM gtt_record_files f USING target t WHERE f.record_id=t.id RETURNING f.id
+  ), removed_pending AS (
+    DELETE FROM gtt_pending_inquiries p USING target t WHERE p.id=t.id RETURNING p.id
+  ) DELETE FROM gtt_records r USING target t WHERE r.id=t.id
+    AND (SELECT count(*) FROM removed_team)+(SELECT count(*) FROM removed_versions)
+      +(SELECT count(*) FROM removed_history)+(SELECT count(*) FROM removed_files)
+      +(SELECT count(*) FROM removed_pending)>=0 RETURNING r.id`,[id,revision]);
+  if(!rows.length)throw new RecordError("Upit je izmenjen ili slanje još nije završeno. Osveži evidenciju.",409);
+  return {deleted:rows[0].id};
+}
 export async function createRecord(db: QueryDB, input: NonNullable<ReturnType<typeof fromSubmission>>, actor = "Netlify Forms") {
   const {rows} = await db.query(`WITH added AS (
     INSERT INTO gtt_records(id,source,received_at,original,document) VALUES ($1,$2,$3,$4::jsonb,$5::jsonb)

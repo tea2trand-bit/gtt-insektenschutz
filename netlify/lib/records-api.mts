@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { RecordError, amount, createRecord, fromSubmission, readRecord, changeRecord, type QueryDB } from "./records.mts";
-import {renderQuoteEmail} from './quote-email.mts';
+import { RecordError, amount, createRecord, fromSubmission, readRecord, changeRecord, deleteArchivedTestRecord, type QueryDB } from "./records.mts";
+import {renderQuoteEmail,offerNumber,legacyOfferNumber} from './quote-email.mts';
+import {calculateMeasuredOffer} from './admin-measurements.mts';
+import type {Offer} from './projects-store.mts';
 const reply = (data:unknown,status=200) => Response.json(data,{status,headers:{"Cache-Control":"no-store", "X-Content-Type-Options":"nosniff"}});
-export async function recordsAPI(req: Request, db: QueryDB, path: string[]) {
+export async function recordsAPI(req: Request, db: QueryDB, path: string[], options:{offer?:Offer;context?:any}={}) {
   const id = path[0];
   const method = req.method;
   if (!id && method === "POST") {
@@ -41,8 +43,8 @@ export async function recordsAPI(req: Request, db: QueryDB, path: string[]) {
   }
   if (!id && method === "GET") {
     const archived=new URL(req.url).searchParams.get('archived')==='1';
-    const {rows} = await db.query("SELECT id,source,received_at,updated_at,revision,document FROM gtt_records WHERE (COALESCE(document->>'archivedAt','')<>'')=$1 ORDER BY received_at DESC LIMIT 1000",[archived]);
-    return reply({records:rows});
+    const {rows} = await db.query("SELECT r.id,r.source,r.received_at,r.updated_at,r.revision,r.document,(COALESCE(r.original->>'submissionId','')<>'' AND COALESCE(r.original->>'inquiryId','')='') AS historical,(SELECT COALESCE(jsonb_agg(v.version::text ORDER BY v.version),'[]'::jsonb) FROM gtt_quote_versions v WHERE v.record_id=r.id) AS offer_versions FROM gtt_records r WHERE (COALESCE(r.document->>'archivedAt','')<>'')=$1 ORDER BY r.received_at DESC LIMIT 1000",[archived]);
+    return reply({records:rows.map(({offer_versions,...record})=>({...record,offerReferences:offer_versions.flatMap((version:string)=>[offerNumber(record.id,Number(version)),legacyOfferNumber(record.id,Number(version))])}))});
   }
   if (id === "import" && method === "POST") {
     const body:any = await req.json();
@@ -56,6 +58,12 @@ export async function recordsAPI(req: Request, db: QueryDB, path: string[]) {
     return reply({created,duplicates:inputs.length-created});
   }
   if (!/^GTT-[a-f0-9]{24}$/.test(id || "")) throw new RecordError("Neispravan ID kartona.");
+  if(path[1]==='measurements'&&path.length===2&&method==='POST')return reply(await calculateMeasuredOffer(db,id,await req.json(),options));
+  if(path.length===1&&method==='DELETE'){
+    const body:any=await req.json();
+    if(body.confirmRecordId!==id)throw new RecordError("Potvrdi trajno uklanjanje izabranog TEST upita.");
+    return reply(await deleteArchivedTestRecord(db,id,body.revision));
+  }
   if(path[1]==='offer'&&path.length===2&&method==='GET'){
     const record=await readRecord(db,id);
     const version=record.document.intake?.version;

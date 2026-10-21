@@ -94,5 +94,6 @@ test('professional offer is stable, escaped, itemized, and does not duplicate di
   const e=parseMeasurements('2 Fenster 120 x 140 cm, 1 Tür 90 x 210 cm','9000');const p=priceExtraction(e,'kontakt',offer);
   const s={...p,quote:p.quote,measurements:e.measurements,clarification:[],processedAt:'2026-10-21T01:00:00Z',postalCode:'9000',customer:{name:'TEST <script>alert(1)</script>',email:'test@example.invalid'}};
   const first=renderQuoteEmail(s,'GTT-12345678abcdef',4),again=renderQuoteEmail(s,'GTT-12345678abcdef',4);
-  assert.equal(first.reference,'GTT-12345678-004');assert.deepEqual(first,again);assert.match(first.html,/Einzelpreis/);assert.match(first.html,/Gesamtbetrag/);assert.match(first.html,/bereits in den gerundeten Einheitspreisen berücksichtigt/);assert.match(first.html,/Rundung/);assert.doesNotMatch(first.html,/<script>|PDF|gültig bis|MwSt/);assert.match(first.html,/&lt;script&gt;/);assert.match(first.html,/@media\(max-width:480px\)/);
+  assert.equal(first.reference,'GTT-004');assert.deepEqual(first,again);assert.match(first.html,/Einzelpreis/);assert.match(first.html,/Gesamtbetrag inkl\. MwSt\./);assert.match(first.html,/bereits in den gerundeten Einheitspreisen berücksichtigt/);assert.doesNotMatch(first.html+first.text,/Rundung/);assert.doesNotMatch(first.html,/<script>|PDF|gültig bis/);assert.match(first.html,/&lt;script&gt;/);assert.match(first.html,/@media\(max-width:480px\)/);
+  for(const content of [first.html.replace(/<[^>]+>/g,' '),first.text])assert.match(content,/Darin enthaltene MwSt\. \(8\.1 %\):\s+CHF 76\.88/);
 });

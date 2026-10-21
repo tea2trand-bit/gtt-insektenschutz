@@ -26,7 +26,7 @@ test('verified contact intake keeps one card and quote, renders the same profess
     assert.equal((await db.query('SELECT count(*)::int AS n FROM gtt_records')).rows[0].n,1);
     assert.equal((await db.query('SELECT count(*)::int AS n FROM gtt_quote_outbox')).rows[0].n,1);
     const offer=await recordsAPI(new Request('http://local'),db,[first.id,'offer']);const rendered=await offer.json();
-    assert.equal(offer.status,200);assert.match(rendered.html,/Gesamtbetrag/);assert.match(rendered.html.replace(/&#39;/g,"'"),/1[’']026\.00/);assert.match(rendered.html,/Rundung/);assert.match(rendered.html,/0\.36/);assert.ok(rendered.reference);
+    assert.equal(offer.status,200);assert.match(rendered.html,/Gesamtbetrag inkl\. MwSt\./);assert.match(rendered.html.replace(/&#39;/g,"'"),/1[’']026\.00/);assert.match(rendered.html,/CHF 76\.88/);assert.match(rendered.text,/Darin enthaltene MwSt\. \(8\.1 %\): CHF 76\.88/);assert.doesNotMatch(rendered.html+rendered.text,/Rundung/);assert.ok(rendered.reference);
     assert.equal(r.history.length,2);
   }finally{await db.close();}
 });

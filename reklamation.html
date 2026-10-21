@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="de-CH">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,follow">
+  <title>Reklamation melden | GTT Insektenschutz</title>
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+  <link rel="stylesheet" href="reklamation.css">
+  <script defer src="reklamation.js"></script>
+</head>
+<body>
+  <header><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">✓</span><span>GTT Insektenschutz<small>Ein Bereich der GTT Group</small></span></a><a class="back" href="/">Zur Website ↗</a></header>
+  <main>
+    <p class="eyebrow">Kundendienst</p>
+    <h1>Reklamation melden</h1>
+    <p class="intro">Etwas passt nicht? Beschreiben Sie uns das Problem. Wir kümmern uns um Ihr Anliegen.</p>
+    <div class="layout">
+      <section class="form-card" aria-label="Reklamationsformular">
+        <form id="complaintForm">
+          <label for="lookup">Offertnummer oder Vor- und Nachname</label>
+          <input id="lookup" name="lookup" required minlength="3" maxlength="200" autocomplete="off" placeholder="z. B. GTT-001 oder Max Muster" aria-describedby="lookupHelp">
+          <p class="help" id="lookupHelp">Die Offertnummer finden Sie auf Ihrer Offerte. Falls sie nicht zur Hand ist, genügt Ihr vollständiger Name.</p>
+          <label for="email">Ihre E-Mail-Adresse</label>
+          <input id="email" name="email" type="email" required maxlength="250" autocomplete="email" placeholder="Die E-Mail-Adresse Ihrer Anfrage">
+          <label for="description">Was funktioniert nicht?</label>
+          <textarea id="description" name="description" required minlength="10" maxlength="4000" rows="6" placeholder="Beschreiben Sie bitte, was passiert ist und welches Fenster oder welche Tür betroffen ist."></textarea>
+          <div class="honey" aria-hidden="true"><label>Website<input name="website" tabindex="-1" autocomplete="off"></label></div>
+          <p class="privacy">Wir verwenden Ihre Angaben zur Zuordnung und Bearbeitung Ihrer Reklamation. <a href="datenschutz.html">Datenschutz</a></p>
+          <p id="formError" class="error" role="alert"></p>
+          <button id="submitComplaint" type="submit">Reklamation senden <span aria-hidden="true">→</span></button>
+        </form>
+        <div id="complaintSuccess" hidden role="status" tabindex="-1">
+          <span class="success-mark" aria-hidden="true">✓</span>
+          <h2>Vielen Dank für Ihre Nachricht.</h2>
+          <p>Ihre Reklamation wurde erfasst. Unser Team prüft Ihr Anliegen und meldet sich bei Ihnen.</p>
+          <a class="return-link" href="/">Zurück zur Website →</a>
+        </div>
+        <noscript><p>Bitte aktivieren Sie JavaScript oder kontaktieren Sie uns per E-Mail.</p></noscript>
+      </section>
+      <aside>
+        <div class="service-icon" aria-hidden="true">✓</div>
+        <h2>Ihr Anliegen ist bei uns richtig.</h2>
+        <p>Ob Fenster, Tür oder Plissee: Schildern Sie uns, was wir uns ansehen sollen.</p>
+        <div class="service-step"><b>1</b><span>Sie beschreiben das Problem.</span></div>
+        <div class="service-step"><b>2</b><span>Wir prüfen Ihre Reklamation und den zugehörigen Auftrag.</span></div>
+        <div class="service-step"><b>3</b><span>Wir melden uns, um die nächsten Schritte abzustimmen.</span></div>
+        <div class="contact"><small>Lieber persönlich?</small><a href="tel:+41764229242">+41 76 422 92 42</a><a href="mailto:info@gttgroup.ch">info@gttgroup.ch</a></div>
+      </aside>
+    </div>
+  </main>
+  <footer><span>GTT Insektenschutz · GT-Trading GmbH</span><nav aria-label="Rechtliches"><a href="impressum.html">Impressum</a><a href="datenschutz.html">Datenschutz</a></nav></footer>
+</body>
+</html>
