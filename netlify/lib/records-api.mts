@@ -62,7 +62,7 @@ export async function recordsAPI(req: Request, db: QueryDB, path: string[]) {
     if(!version)throw new RecordError("Automatska ponuda još nije pripremljena.",404);
     const {rows}=await db.query('SELECT version,snapshot FROM gtt_quote_versions WHERE record_id=$1 AND version=$2',[id,version]);
     if(!rows[0])throw new RecordError("Verzija ponude nije pronađena.",404);
-    return reply(renderQuoteEmail(rows[0].snapshot,id,Number(rows[0].version)));
+    return reply(renderQuoteEmail(rows[0].snapshot,id,Number(rows[0].version),{baseURL:new URL(req.url).origin}));
   }
   if (path[1] === "files") {
     await readRecord(db,id);

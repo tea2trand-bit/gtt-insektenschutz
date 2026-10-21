@@ -1,174 +1,156 @@
 (() => {
-  const root = document.getElementById('recordsRoot');
-  const STATUSES=['Novi upit','Ponuda poslata','Čeka odgovor','Prihvaćeno','Odbijeno','Montaža','Završeno'];
-  const historyTitle=kind=>({created:'Karton otvoren',archive:'Upit uklonjen iz aktivne evidencije',restore:'Upit vraćen iz arhive','historical-complete':'Raniji upit označen kao završen','start-installation':'Započeta montaža',complete:'Posao završen',payment:'Zabeležena uplata',complaint:'Izmenjena reklamacija',decision:'Zabeležen ishod upita',appointment:'Zabeležen termin montaže','cancel-appointment':'Otkazan termin montaže',quote:'Pripremljena nova ponuda',quote_intake:'Automatski izdvojene mere i obračun',quote_email:'Obrađeno slanje poruke kupcu'}[kind]||'Sačuvan karton');
-  const $=(s)=>root.querySelector(s);
-  const money=n=>n==null?'Nije uneto':new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF'}).format(n);
-  const day=s=>s?new Date(s).toLocaleDateString('sr-Latn-RS'):'—';
+  const root=document.getElementById('recordsRoot');
+  const STATUS={'Novi upit':'Neue Anfrage','Ponuda poslata':'Offerte versendet','Čeka odgovor':'Offerte versendet','Prihvaćeno':'Angenommen','Odbijeno':'Abgelehnt','Montaža':'Montage','Završeno':'Abgeschlossen'};
+  const STEPS=['Novi upit','Ponuda poslata','Prihvaćeno','Odbijeno','Montaža','Završeno'];
+  const SOURCE={'Kalkulator':'Rechner','Kontakt':'Kontaktformular','B2B':'B2B','Ručni unos':'Manuell'};
+  const EVENTS={created:'Anfrage angelegt',archive:'Anfrage archiviert',restore:'Anfrage wiederhergestellt','historical-complete':'Frühere Anfrage abgeschlossen','start-installation':'Montage begonnen',complete:'Auftrag abgeschlossen',decision:'Entscheidung erfasst',payment:'Zahlung erfasst',complaint:'Reklamation aktualisiert',appointment:'Montagetermin geplant','cancel-appointment':'Montagetermin abgesagt',quote_intake:'Masse und Offerte automatisch erstellt',quote_email:'E-Mail-Versand bearbeitet',customer_acceptance:'Bestätigung des Kunden erhalten'};
+  const canonical=s=>s==='Čeka odgovor'?'Ponuda poslata':s;
+  const money=n=>n==null?'Nicht erfasst':new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF'}).format(n);
+  const date=s=>s?new Date(s).toLocaleDateString('de-CH'):'—';
   const today=()=>new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Zurich'});
-  const e=(tag,attrs={},...children)=>{const n=document.createElement(tag);for(const[k,v]of Object.entries(attrs)){if(k.startsWith('on'))n.addEventListener(k.slice(2),v);else if(k==='class')n.className=v;else if(v!=null)n.setAttribute(k,v);}children.flat().forEach(c=>c!=null&&n.append(c));return n;};
+  const productText=s=>(s||'').replace(/Prozori:/g,'Fenster:').replace(/vrata:/g,'Türen:');
+  const $=s=>root.querySelector(s);
+  const e=(tag,attrs={},...children)=>{const n=document.createElement(tag);for(const[k,v]of Object.entries(attrs)){if(k.startsWith('on'))n.addEventListener(k.slice(2),v);else if(k==='class')n.className=v;else if(v!==false&&v!=null)n.setAttribute(k,v===true?'':v);}children.flat().forEach(c=>c!=null&&n.append(c));return n;};
   const btn=(label,fn,kind='ghost small')=>e('button',{type:'button',class:'btn '+kind,onclick:fn},label);
-  let list=[],selected=null,filter='',search='',source='',busy=false,view='inquiries',showArchived=false;
+  let records=[],selected=null,archived=false,filter='',search='',view='inquiries',busy=false,deepLinkResolved=false;
   const hasAppointment=d=>!d.archivedAt&&d.appointmentAt&&d.appointmentTime&&d.appointmentStatus!=='cancelled'&&['Prihvaćeno','Montaža'].includes(d.status);
-  const appointmentText=d=>day(d.appointmentAt)+' u '+d.appointmentTime;
+  const appointmentText=d=>date(d.appointmentAt)+' um '+d.appointmentTime;
   async function api(path='',opts={}){
-    const token=sessionStorage.getItem('gttAdminToken');
-    const headers={Authorization:'Bearer '+(token||'')};
-    let body=opts.body;
-    if(opts.json){headers['Content-Type']='application/json';body=JSON.stringify(opts.json);}
-    const r=await fetch('/api/admin/records'+path,{method:opts.method||'GET',headers,body});
-    if(r.status===401){document.getElementById('logoutBtn').click();throw Error('Sesija je istekla. Prijavi se ponovo.');}
-    if(opts.file&&r.ok)return r.blob();
-    const d=await r.json();if(!r.ok)throw Error(d.error||'Greška pri čuvanju.');return d;
+    const headers={Authorization:'Bearer '+(sessionStorage.getItem('gttAdminToken')||'')};
+    let body=opts.body;if(opts.json){headers['Content-Type']='application/json';body=JSON.stringify(opts.json);}
+    const response=await fetch('/api/admin/records'+path,{method:opts.method||'GET',headers,body});
+    if(response.status===401){document.getElementById('logoutBtn').click();throw Error('Ihre Sitzung ist abgelaufen. Bitte erneut anmelden.');}
+    if(opts.file&&response.ok)return response.blob();
+    const data=await response.json();if(!response.ok)throw Error(data.error||'Die Anfrage konnte nicht gespeichert werden.');return data;
   }
-  function error(err){const box=$('#recordError');if(box){box.textContent=err.message;box.scrollIntoView({block:'nearest'});}else root.prepend(e('p',{class:'record-error'},err.message));}
-  async function load(){try{list=(await api(showArchived?'?archived=1':'')).records;renderList();}catch(err){root.replaceChildren(e('h2',{},'Upiti / Anfragen'),e('p',{class:'record-error'},err.message),btn('Pokušaj ponovo',load));}}
-  async function open(id){try{selected=(await api('/'+id)).record;renderRecord();root.scrollIntoView({block:'start'});$('.record-heading').focus({preventScroll:true});}catch(err){error(err);}}
+  function error(err){const box=$('#recordError');if(box)box.textContent=err.message;else root.prepend(e('p',{class:'record-error',role:'alert'},err.message));}
+  async function load(){
+    try{
+      records=(await api(archived?'?archived=1':'')).records;renderList();
+      if(!deepLinkResolved){deepLinkResolved=true;const id=new URL(location.href).searchParams.get('anfrage');if(/^GTT-[a-f0-9]{24}$/.test(id||''))await open(id);}
+    }catch(err){root.replaceChildren(e('h2',{},'Anfragen'),e('p',{class:'record-error'},err.message),btn('Erneut versuchen',load));}
+  }
+  async function open(id){try{selected=(await api('/'+id)).record;renderCard();root.scrollIntoView({block:'start'});$('.record-heading').focus({preventScroll:true});}catch(err){error(err);}}
   function renderList(){
-    selected=null;root.replaceChildren(e('div',{class:'record-head'},e('div',{},e('h2',{},showArchived?'Arhiva upita':'Upiti / Anfragen'),e('p',{class:'record-note'},showArchived?'Uklonjeni upiti su sačuvani i mogu da se vrate u glavnu evidenciju.':'Svaki upit ima svoj karton. Prihvatanje i odbijanje beleže se posebno.')),e('div',{class:'record-actions'},...(showArchived?[]:[btn('Dodaj klijenta',manual,'')]),btn(showArchived?'← Aktivni upiti':'Arhiva',()=>{showArchived=!showArchived;view='inquiries';filter='';search='';load();}),btn('Osveži',load))));
-    if(window.location.hostname==='127.0.0.1'||window.location.hostname==='localhost')root.append(e('div',{class:'record-alert'},'LOKALNI PREGLED · Samo označeni test podaci. Promene se čuvaju lokalno.'));
+    selected=null;
+    root.replaceChildren(e('div',{class:'record-head'},e('div',{},e('h2',{},archived?'Archiv':'Anfragen'),e('p',{class:'record-note'},archived?'Archivierte Anfragen können jederzeit wiederhergestellt werden.':'Website-Anfragen und Offerten werden automatisch erfasst.')),e('div',{class:'record-actions'},...(archived?[]:[btn('Kunde hinzufügen',manual,'')]),btn(archived?'← Aktive Anfragen':'Archiv',()=>{archived=!archived;view='inquiries';filter='';search='';load();}),btn('Aktualisieren',load))));
+    if(['127.0.0.1','localhost'].includes(location.hostname))root.append(e('p',{class:'record-alert'},'LOKALE VORSCHAU · Gekennzeichnete Testdaten. Änderungen werden lokal gespeichert.'));
     const now=new Date().toLocaleString('sv-SE',{timeZone:'Europe/Zurich'}).slice(0,16).replace(' ','T');
-    const appointments=list.filter(r=>hasAppointment(r.document)&&(r.document.appointmentAt+'T'+r.document.appointmentTime)>=now).sort((a,b)=>(a.document.appointmentAt+a.document.appointmentTime).localeCompare(b.document.appointmentAt+b.document.appointmentTime));
-    if(!showArchived)root.append(e('div',{class:'record-actions'},btn('Upiti',()=>{view='inquiries';renderList();},view==='inquiries'?'small':'ghost small'),btn('Montaže · '+appointments.length,()=>{view='appointments';renderList();},view==='appointments'?'small':'ghost small')));
+    const appointments=records.filter(r=>hasAppointment(r.document)&&r.document.appointmentAt+'T'+r.document.appointmentTime>=now).sort((a,b)=>(a.document.appointmentAt+a.document.appointmentTime).localeCompare(b.document.appointmentAt+b.document.appointmentTime));
+    if(!archived)root.append(e('div',{class:'record-actions'},btn('Anfragen',()=>{view='inquiries';renderList();},view==='inquiries'?'small':'ghost small'),btn('Montagetermine '+appointments.length,()=>{view='appointments';renderList();},view==='appointments'?'small':'ghost small')));
     if(view==='appointments'){
-      root.append(e('h2',{style:'margin-top:20px'},'Predstojeće montaže'),e('p',{class:'record-note'},'Interni termini u švajcarskom lokalnom vremenu (Europe/Zurich).'));
-      if(!appointments.length)root.append(e('p',{class:'record-empty'},'Nema predstojećih zakazanih montaža. Termin zadaješ dugmetom „Zakaži termin montaže“ u dogovorenom poslu.'));
-      appointments.forEach(r=>{const d=r.document;root.append(e('div',{class:'record-row'},e('div',{},e('strong',{},d.name||d.company),e('small',{},d.isTest?'TEST · Nije stvarna poseta':'')),e('div',{},e('strong',{},appointmentText(d)),e('small',{},[d.address,d.postalCode].filter(Boolean).join(' · ')||'Adresa nije uneta')),e('div',{},d.phone||d.email,e('small',{},d.appointmentNote||'')),btn('Otvori karton',()=>open(r.id),'small')));});return;
+      if(!appointments.length)root.append(e('p',{class:'record-empty'},'Keine anstehenden Montagetermine.'));
+      appointments.forEach(r=>{const d=r.document;root.append(e('div',{class:'record-row'},e('strong',{},d.name||d.company),e('div',{},appointmentText(d),e('small',{},[d.address,d.postalCode].filter(Boolean).join(' · ')||'Adresse nicht erfasst')),e('span',{},d.phone||d.email),btn('Öffnen',()=>open(r.id),'small')));});return;
     }
-    const counts=e('div',{class:'record-summary'});
-    [['','Svi'],...STATUSES.map(s=>[s,s])].forEach(([s,label])=>counts.append(e('button',{type:'button',class:s===filter?'active':'',onclick:()=>{filter=s;renderList();}},e('span',{},label),e('strong',{class:'record-kpi-value'},String(list.filter(r=>!s||r.document.status===s).length)))));
-    root.append(counts);
-    const input=e('input',{placeholder:'Traži ime, firmu, telefon ili ID',value:search,'aria-label':'Pretraga upita',oninput:ev=>{search=ev.target.value;drawRows();}});
-    const sources=e('select',{'aria-label':'Izvor upita',onchange:ev=>{source=ev.target.value;drawRows();}},...['Svi izvori','Kalkulator','B2B','Kontakt','Ručni unos'].map(s=>e('option',{value:s==='Svi izvori'?'':s},s)));sources.value=source;
-    root.append(e('div',{class:'record-toolbar'},input,sources),e('div',{id:'recordRows',class:'record-list'}));drawRows();
+    const counters=e('div',{class:'record-summary'});
+    STEPS.map(s=>[s,STATUS[s]]).forEach(([s,label])=>counters.append(e('button',{type:'button',class:s===filter?'active':'','aria-pressed':String(s===filter),onclick:()=>{filter=filter===s?'':s;drawRows();renderCounters();}},e('span',{},label),e('strong',{class:'record-kpi-value'},String(records.filter(r=>canonical(r.document.status)===s).length)))));
+    root.append(counters,e('div',{class:'record-toolbar'},e('input',{'aria-label':'Anfragen durchsuchen',placeholder:'Name, Firma oder Kontakt suchen',value:search,oninput:ev=>{search=ev.target.value;drawRows();}})),e('div',{id:'recordRows',class:'record-list'}));drawRows();
   }
-  function manual(){
-    selected=null;view='inquiries';
-    const requestId=crypto.randomUUID();
-    root.replaceChildren(btn('← Svi upiti',load),e('h2',{},'Dodaj klijenta'),e('p',{class:'record-note'},'Ručni unos za telefon, preporuku, WhatsApp ili lični kontakt. Dovoljni su ime ili firma i telefon ili email.'),e('p',{id:'recordError',class:'record-error',role:'alert'}));
-    const f=e('form',{onsubmit:async ev=>{
-      ev.preventDefault();const save=f.querySelector('[type=submit]');save.disabled=true;
-      try{const d=await api('',{method:'POST',json:{...Object.fromEntries(new FormData(f)),requestId}});selected=d.record;renderRecord();root.scrollIntoView({block:'start'});$('.record-heading').focus({preventScroll:true});root.prepend(e('p',{class:'record-note',role:'status'},'✓ Klijent je sačuvan kao novi upit. Dogovor možeš zabeležiti dugmetom „Dogovoren posao“.'));}catch(err){error(err);save.disabled=false;}
-    }});
-    const fields=e('div',{class:'record-fields'});
-    [['Ime i prezime','name','text'],['Firma','company','text'],['Telefon','phone','tel'],['Email (neobavezno)','email','email'],['Adresa montaže','address','text'],['Poštanski broj / mesto','postalCode','text'],['Kanal dolaska (neobavezno)','channel','text'],['Početna ponuđena cena (CHF, neobavezno)','quotedPrice','number']].forEach(([label,key,type])=>fields.append(e('label',{},label,e('input',{name:key,type,...(type==='number'?{min:0,step:'.01'}:{})}))));
-    fields.append(e('label',{class:'wide'},'Beleška / zahtev',e('textarea',{name:'request',maxlength:'6000'})));
-    const primary=e('div',{class:'record-fields'});
-    const primaryName=fields.querySelector('[name=name]').closest('label');primaryName.firstChild.textContent='Ime ili firma';
-    primary.append(primaryName,fields.querySelector('[name=phone]').closest('label'));
-    f.append(primary,e('details',{},e('summary',{},'Dodatni podaci (neobavezno)'),fields),e('p',{class:'record-note'},'Početni status: Novi upit. Sam unos čuva evidenciju; email se ne šalje.'),e('button',{type:'submit',class:'btn'},'Sačuvaj klijenta'));root.append(f);root.scrollIntoView({block:'start'});
-  }
+  function renderCounters(){root.querySelectorAll('.record-summary button').forEach((b,i)=>{const status=STEPS[i];b.classList.toggle('active',filter===status);b.setAttribute('aria-pressed',String(filter===status));});}
   function drawRows(){
-    const rows=$('#recordRows');rows.replaceChildren();
-    const found=list.filter(r=>(!filter||r.document.status===filter)&&(!source||r.source===source)&&(!search||[r.id,...Object.values(r.document).filter(x=>typeof x==='string')].join(' ').toLowerCase().includes(search.toLowerCase())));
-    if(!found.length)rows.append(e('div',{class:'record-empty'},showArchived?'Arhiva je prazna.':list.length?'Nema upita za ovu pretragu.':'Još nema upita. Novi potvrđeni upiti će ovde dobiti karton.'));
-    found.forEach(r=>{const d=r.document;rows.append(e('div',{class:'record-row'},e('div',{},e('strong',{},d.name||d.company||'Bez naziva'),d.isTest?e('span',{class:'record-badge test'},'TEST'):null,e('small',{},d.company||d.email||d.phone),e('small',{},r.id)),e('div',{class:'record-source'},r.source,e('small',{},day(r.received_at))),e('div',{class:'record-price'},money(d.agreedPrice??d.quotedPrice),e('small',{},d.status==='Odbijeno'?'Ranija cena':d.agreedPrice!=null?'Dogovoreno':'Ponuda')),e('div',{class:'record-row-actions'},e('span',{class:'record-badge'},d.status),d.decisionDate?e('small',{},'Odluka: '+day(d.decisionDate)):null,btn('Otvori karton',()=>open(r.id),'small'),btn(showArchived?'Vrati upit':'Ukloni upit',()=>archiveRecord(r,showArchived),showArchived?'ghost small':'ghost small record-remove'))));});
+    const box=$('#recordRows');box.replaceChildren();
+    const found=records.filter(r=>(!filter||canonical(r.document.status)===filter)&&(!search||[r.id,...Object.values(r.document).filter(x=>typeof x==='string')].join(' ').toLowerCase().includes(search.toLowerCase())));
+    if(!found.length)box.append(e('p',{class:'record-empty'},archived?'Das Archiv ist leer.':'Keine passenden Anfragen.'));
+    found.forEach(r=>{const d=r.document;box.append(e('div',{class:'record-row'},e('div',{},e('strong',{},d.name||d.company||'Ohne Namen'),d.isTest?e('span',{class:'record-badge test'},'TEST'):null,e('small',{},d.company||d.email||d.phone)),e('div',{class:'record-source'},SOURCE[r.source]||r.source,e('small',{},date(r.received_at))),e('div',{class:'record-price'},money(d.agreedPrice??d.quotedPrice),e('small',{},d.agreedPrice!=null?'Vereinbart':'Offerte')),e('div',{class:'record-row-actions'},e('span',{class:'record-badge'},STATUS[d.status]||d.status),btn('Öffnen',()=>open(r.id),'small'),btn(archived?'Wiederherstellen':'Entfernen',()=>archiveRecord(r,archived),archived?'ghost small':'ghost small record-remove'))));});
   }
   async function archiveRecord(r,restore=false){
-    if(busy)return;
-    if($('#recordForm')?.dataset.dirty==='true'){error(Error('Prvo sačuvaj izmene kartona.'));return;}
-    if(!restore&&!confirm('Ukloni upit „'+(r.document.name||r.document.company||r.id)+'“ iz aktivne evidencije? Karton ostaje u arhivi i može da se vrati.'))return;
+    if(busy)return;if($('#recordForm')?.dataset.dirty==='true'){error(Error('Bitte zuerst Ihre Änderungen speichern.'));return;}
+    if(!restore&&!confirm('Anfrage «'+(r.document.name||r.document.company||'ohne Namen')+'» entfernen? Sie bleibt im Archiv und kann wiederhergestellt werden.'))return;
     busy=true;root.querySelectorAll('button').forEach(b=>b.disabled=true);
-    try{await api('/'+r.id,{method:'PATCH',json:{action:restore?'restore':'archive',revision:r.revision}});await load();root.prepend(e('p',{class:'record-note',role:'status'},restore?'✓ Upit je vraćen u aktivnu evidenciju.':'✓ Upit je uklonjen. Možeš da ga vratiš iz arhive.'));}
+    try{await api('/'+r.id,{method:'PATCH',json:{action:restore?'restore':'archive',revision:r.revision}});await load();root.prepend(e('p',{class:'record-note',role:'status'},restore?'✓ Anfrage wiederhergestellt.':'✓ Anfrage archiviert.'));}
     catch(err){error(err);}finally{busy=false;root.querySelectorAll('button').forEach(b=>b.disabled=false);}
   }
-  function field(label,key,type='text',wide=false){const d=selected.document;const input=type==='textarea'?e('textarea',{name:key},d[key]||''):type==='select'?e('select',{name:key},...STATUSES.map(s=>e('option',{value:s},s))):e('input',{name:key,type,value:d[key]??'',...(type==='number'?{min:'0',step:'.01'}:{})});if(type==='select')input.value=d[key];return e('label',{class:wide?'wide':''},label,input);}
-  function group(title,fields){return e('details',{},e('summary',{},title),e('div',{class:'record-fields'},...fields.map(f=>field(...f))));}
-  function renderRecord(){
-    const r=selected,d=r.document;root.replaceChildren();
-    root.append(e('div',{class:'record-head'},btn('← Svi upiti',()=>{if($('#recordForm')?.dataset.dirty==='true'&&!confirm('Napusti nesačuvane izmene?'))return;load();}),e('span',{class:'record-note'},r.id+' · '+r.source+' · '+day(r.received_at))));
-    root.append(e('h2',{class:'record-heading',tabindex:'-1'},d.name||d.company||'Karton upita'));
-    root.append(e('p',{class:'record-note'},[d.company,d.email,d.phone,d.address,d.postalCode].filter(Boolean).join(' · ')));
-    if(d.isTest)root.append(e('div',{class:'record-alert'},'TEST UPIT · Nije stvarna narudžbina.'));
-    if(d.archivedAt){
-      root.append(e('div',{class:'record-alert'},'Ovaj upit je uklonjen iz aktivne evidencije · '+day(d.archivedAt)),btn('Vrati upit',()=>archiveRecord(r,true),''),e('section',{class:'record-request-summary'},e('strong',{},'Zahtev kupca'),e('p',{},d.request||d.products||'Nije uneto')),e('details',{},e('summary',{},'Originalni upit i kalkulacija'),e('pre',{},JSON.stringify(r.original,null,2))),e('details',{},e('summary',{},'Istorija promena · '+r.history.length),...r.history.map(h=>e('p',{class:'record-note'},'Verzija '+h.revision+' · '+new Date(h.at).toLocaleString('sr-Latn-RS')+' · '+historyTitle(h.kind)))));return;
-    }
-    root.append(e('div',{class:'record-actions'},btn('Ukloni upit',()=>archiveRecord(r),'ghost small record-remove')));
-    root.append(e('div',{class:'record-decision-actions'},e('span',{class:'record-badge'},d.status+(d.decisionDate?' · '+day(d.decisionDate):'')),btn('Dogovoren posao',()=>decision('Prihvaćeno'),''),btn('Odbijeno',()=>decision('Odbijeno'),'ghost'),btn('Izmeni cenu / datum',()=>editDecision(),'ghost small'),e('p',{class:'record-note'},'Jedan klik beleži ishod i današnji datum. Dogovor koristi poslednju ponuđenu cenu; ako cena nedostaje, unesi samo iznos.')));
-    const flow=$('.record-decision-actions');
-    if(r.original.submissionId&&!r.original.inquiryId&&d.status!=='Završeno')flow.append(btn('Označi kao završeno',()=>mutate({action:'historical-complete'}),'ghost small'));
-    if(d.status==='Ponuda poslata')flow.append(btn('Čeka odgovor',()=>mutate({action:'update',patch:{status:'Čeka odgovor'}}),'ghost small'));
-    if(d.status==='Prihvaćeno')flow.append(btn('Počni montažu',()=>mutate({action:'start-installation'}),'ghost small'));
-    if(d.status==='Montaža')flow.append(btn('Završi posao',()=>mutate({action:'complete'}),'ghost small'));
-    root.append(e('div',{id:'decisionInline'}));
-    const paid=d.payments.reduce((sum,p)=>sum+p.amount,0),agreed=['Prihvaćeno','Montaža','Završeno'].includes(d.status),base=d.invoiceAmount??(agreed?d.agreedPrice:null);
-    root.append(e('div',{class:'record-facts'},...[["Izračunata / poslednja ponuda",d.quotedPrice??r.original.price],[d.status==='Odbijeno'&&d.agreedPrice!=null?"Ranije zabeležena cena":"Dogovorena cena",d.agreedPrice],["Uplaćeno",paid],["Preostalo",base==null?null:Math.max(0,base-paid)]].map(([label,n])=>e('div',{},e('small',{},label),e('strong',{},money(n))))));
-    const extracted=(d.intake?.measurements||[]).map(m=>(m.type==='window'?'Prozori':'Vrata / plise')+': '+(m.mode==='dimensions'?`${m.quantity} × ${m.width} ${m.widthUnit} × ${m.height} ${m.heightUnit} · `:'')+Number(m.areaM2).toLocaleString('de-CH',{maximumFractionDigits:4})+' m²').join('\n');
-    root.append(e('section',{class:'record-request-summary'},e('strong',{},'Zahtev kupca'),e('p',{},extracted||d.products||'Mere / proizvodi još nisu zabeleženi.'),d.request?e('p',{},d.request):null));
-    if(d.intake)root.append(intakeSummary(d.intake));
-    const appointmentBox=e('section',{class:'record-appointment'});
-    if(['Prihvaćeno','Montaža'].includes(d.status))appointmentBox.append(btn('Zakaži termin montaže',schedule,''));
-    if(hasAppointment(d))appointmentBox.append(e('p',{},e('strong',{},'Montaža: '+appointmentText(d)),e('span',{class:'record-note'},' · '+([d.address,d.postalCode].filter(Boolean).join(' · ')||'Adresa još nije uneta'))),d.appointmentNote?e('p',{class:'record-note'},d.appointmentNote):null,e('div',{class:'record-actions'},btn('Promeni termin',schedule),btn('Otkaži termin',()=>mutate({action:'cancel-appointment'}))));
-    else if(d.appointmentStatus==='cancelled')appointmentBox.append(e('p',{class:'record-note'},'Termin '+appointmentText(d)+' je otkazan. Raniji termin ostaje u istoriji.'));
-    if(appointmentBox.childNodes.length)root.append(appointmentBox);
-    root.append(e('div',{id:'appointmentInline'}));
-    if(base!=null&&paid>base)root.append(e('p',{class:'record-note'},'Višak uplate: '+money(Math.round((paid-base)*100)/100)));
-    root.append(e('p',{id:'recordError',class:'record-error',role:'alert'}));
-    const form=e('form',{id:'recordForm',oninput:()=>form.dataset.dirty='true',onsubmit:async ev=>{ev.preventDefault();const patch=Object.fromEntries(new FormData(form));await mutate({action:'update',patch});}});
-    form.append(group('Izmeni podatke klijenta / zahtev',[["Ime i prezime","name"],["Firma","company"],["Email","email","email"],["Telefon","phone"],["Adresa montaže","address"],["Poštanski broj / mesto","postalCode"],["Proizvodi i mere","products","textarea",true],["Zahtev kupca","request","textarea",true],["Interne napomene","notes","textarea",true]]));
-    form.append(group('Izmeni ponudu / detalje',[["Status","status","select"],["Poslednja ponuđena ukupna cena (CHF)","quotedPrice","number"],["Popust / akcija (opis)","discount"],["Dodatni troškovi (evidencija, CHF)","extraCosts","number"],["Konačna dogovorena cena (CHF)","agreedPrice","number"],["Datum slanja ponude","offerSentAt","date"],["Datum prihvatanja / odbijanja","decisionDate","date"],["Razlog odluke (neobavezno)","decisionReason"],["Dokaz dogovora (npr. naziv priloženog dokumenta)","decisionEvidence","textarea",true],["Poslata ponuda / tekst","offerText","textarea",true]]));
-    form.append(group('Izvođenje posla',[["Merenje","measuredAt","date"],["Poručeno","orderedAt","date"],["Montirano","installedAt","date"],["Detalji posla","workNotes","textarea",true]]));
-    form.append(group('Račun',[["Broj računa","invoiceNumber"],["Iznos računa (CHF)","invoiceAmount","number"],["Datum računa","invoiceDate","date"],["Rok uplate","invoiceDue","date"]]));
-    form.append(e('div',{class:'record-actions record-form-actions'},e('button',{type:'submit',class:'btn',id:'recordSave'},'Sačuvaj karton'),e('span',{class:'record-note'},'Originalni upit ostaje sačuvan. Svako čuvanje dobija verziju u istoriji.')));
-    root.append(form);
-    root.append(e('div',{class:'record-split'},payments(),complaints()));
-    root.append(files());
-    const original=e('details',{},e('summary',{},'Originalni upit i kalkulacija'),e('pre',{},JSON.stringify(r.original,null,2)));
-    const history=e('details',{},e('summary',{},`Istorija promena · ${r.history.length}`));
-    r.history.forEach((h,i)=>{const old=r.history[i+1]?.snapshot||{};const changed=Object.keys(h.snapshot).filter(k=>JSON.stringify(h.snapshot[k])!==JSON.stringify(old[k]));history.append(e('div',{class:'record-log'},e('strong',{},`Verzija ${h.revision} · ${new Date(h.at).toLocaleString('sr-Latn-RS')}`),e('p',{},h.actor),e('p',{},historyTitle(h.kind)),e('details',{},e('summary',{},'Pogledaj zabeležene vrednosti'),e('pre',{},JSON.stringify(Object.fromEntries(changed.map(k=>[k,{pre:old[k]??null,posle:h.snapshot[k]}])),null,2)))));});
-    root.append(original,history);
+  async function mutate(body){
+    if(busy)return;if(body.action!=='update'&&$('#recordForm')?.dataset.dirty==='true'){error(Error('Bitte zuerst Ihre Änderungen speichern.'));return;}
+    busy=true;root.querySelectorAll('button').forEach(b=>b.disabled=true);
+    try{selected=(await api('/'+selected.id,{method:'PATCH',json:{...body,revision:selected.revision}})).record;renderCard();root.prepend(e('p',{class:'record-note',role:'status'},'✓ Gespeichert.'));}
+    catch(err){error(err);}finally{busy=false;root.querySelectorAll('button').forEach(b=>b.disabled=false);}
   }
+  function input(label,name,type='text',value='',required=false){return e('label',{},label,type==='textarea'?e('textarea',{name,required},value??''):e('input',{type,name,value:value??'',required,...(type==='number'?{min:0,step:'.01'}:{})}));}
+  function manual(){
+    selected=null;view='inquiries';archived=false;const requestId=crypto.randomUUID();
+    root.replaceChildren(btn('← Alle Anfragen',load),e('h2',{},'Kunde hinzufügen'),e('p',{class:'record-note'},'Für Anfragen per Telefon, Empfehlung oder persönlichen Kontakt.'),e('p',{id:'recordError',class:'record-error',role:'alert'}));
+    const form=e('form',{onsubmit:async ev=>{ev.preventDefault();const save=form.querySelector('[type=submit]');save.disabled=true;try{selected=(await api('',{method:'POST',json:{...Object.fromEntries(new FormData(form)),requestId}})).record;renderCard();}catch(err){error(err);save.disabled=false;}}});
+    form.append(e('div',{class:'record-fields'},input('Name oder Firma','name'),input('Telefon','phone','tel')),e('details',{},e('summary',{},'Weitere Angaben (optional)'),e('div',{class:'record-fields'},input('Firma','company'),input('E-Mail','email','email'),input('Montageadresse','address'),input('PLZ / Ort','postalCode'),input('Kontaktweg','channel'),input('Offertpreis (CHF)','quotedPrice','number'),input('Anfrage / Notiz','request','textarea'))),e('p',{class:'record-note'},'Das Erfassen erstellt eine Anfrage. Es wird keine E-Mail versendet.'),e('button',{type:'submit',class:'btn'},'Kunde speichern'));root.append(form);
+  }
+  function renderCard(){
+    const r=selected,d=r.document,status=canonical(d.status),legacy=!!r.original.submissionId&&!r.original.inquiryId;
+    root.replaceChildren(e('div',{class:'record-head'},btn('← Alle Anfragen',()=>{if($('#recordForm')?.dataset.dirty==='true'&&!confirm('Ungespeicherte Änderungen verwerfen?'))return;load();}),e('span',{class:'record-note'},(SOURCE[r.source]||r.source)+' · '+date(r.received_at))),e('h2',{class:'record-heading',tabindex:'-1'},d.name||d.company||'Anfrage'),e('p',{class:'record-note'},[d.company,d.email,d.phone,d.address,d.postalCode].filter(Boolean).join(' · ')),e('p',{},e('span',{class:'record-badge'},STATUS[d.status]||d.status)));
+    if(d.isTest)root.append(e('p',{class:'record-alert'},'TESTANFRAGE · Keine tatsächliche Bestellung.'));
+    if(d.archivedAt)root.append(e('div',{class:'record-alert'},'Archiviert am '+date(d.archivedAt),btn('Wiederherstellen',()=>archiveRecord(r,true))));
+    const amount=d.agreedPrice??d.quotedPrice??r.original.price;
+    if(amount!=null)root.append(e('div',{class:'record-main-price'},e('span',{},d.customerAcceptance?.pricePreliminary?'Vorläufiger Offertbetrag':d.agreedPrice!=null?'Vereinbarter Betrag':'Offertbetrag'),e('strong',{},money(amount))));
+    if(d.customerAcceptance)root.append(e('p',{class:'record-note'},'Der Kunde möchte fortfahren. Masse und endgültige Vereinbarung müssen noch geprüft werden.'));
+    const measurements=(d.intake?.measurements||[]).map(m=>(m.type==='window'?'Fenster':'Türen / Plissee')+': '+(m.mode==='dimensions'?m.quantity+' × '+m.width+' '+m.widthUnit+' × '+m.height+' '+m.heightUnit+' · ':'')+Number(m.areaM2).toLocaleString('de-CH',{maximumFractionDigits:4})+' m²').join('\n');
+    root.append(e('section',{class:'record-request-summary'},e('strong',{},'Kundenanfrage'),e('p',{},measurements||productText(d.products)||'Masse noch nicht erfasst.'),d.request?e('p',{},d.request):null));
+    if(d.intake)root.append(quoteSummary(d.intake));
+    if(!d.archivedAt){
+      const next=e('section',{class:'record-next-step'});
+      if(legacy&&status!=='Završeno')next.append(btn('Als abgeschlossen markieren',()=>mutate({action:'historical-complete'}),''));
+      else if(status==='Ponuda poslata')next.append(e('p',{class:'record-note'},'Die Offerte wurde versendet. Der Kunde kann sie über den Link in der E-Mail bestätigen.'));
+      else if(status==='Novi upit'&&!d.intake)next.append(btn('Offertpreis / Angaben erfassen',()=>editDetails('quotedPrice'),''));
+      if(status==='Prihvaćeno')next.append(btn(hasAppointment(d)?'Montagetermin ändern':'Montagetermin planen',schedule,''),btn('Montage beginnen',()=>mutate({action:'start-installation'}),'ghost'));
+      if(status==='Montaža')next.append(btn('Auftrag abschliessen',()=>mutate({action:'complete'}),''));
+      if(next.childNodes.length)root.append(next);
+      if(hasAppointment(d))root.append(e('p',{class:'record-appointment'},e('strong',{},'Montage: '+appointmentText(d)),d.appointmentNote?e('span',{},' · '+d.appointmentNote):null));
+    }
+    root.append(e('div',{id:'inlineAction'}),e('p',{id:'recordError',class:'record-error',role:'alert'}));
+    const more=e('details',{id:'recordDetails'},e('summary',{},d.archivedAt?'Original und Verlauf':'Weitere Angaben / manuelle Korrektur'));
+    if(!d.archivedAt){
+      const form=e('form',{id:'recordForm',oninput:()=>form.dataset.dirty='true',onsubmit:async ev=>{ev.preventDefault();await mutate({action:'update',patch:Object.fromEntries(new FormData(form))});}});
+      const fields=e('div',{class:'record-fields'});
+      for(const [label,key,type]of [['Name','name'],['Firma','company'],['E-Mail','email','email'],['Telefon','phone','tel'],['Montageadresse','address'],['PLZ / Ort','postalCode'],['Offertbetrag (CHF)','quotedPrice','number'],['Vereinbarter Betrag (CHF)','agreedPrice','number'],['Versanddatum der Offerte','offerSentAt','date'],['Datum der Zusage / Absage','decisionDate','date'],['Interne Notizen','notes','textarea'],['Kundenanfrage','request','textarea']])fields.append(input(label,key,type||'text',d[key]));
+      form.append(fields,e('p',{},e('button',{type:'submit',class:'btn'},'Angaben speichern')));more.append(form);
+      const decisions=e('div',{class:'record-actions'},btn('Zusage manuell erfassen',()=>decision('Prihvaćeno')),btn('Absage erfassen',()=>decision('Odbijeno')));
+      if(hasAppointment(d))decisions.append(btn('Montagetermin absagen',()=>mutate({action:'cancel-appointment'})));
+      more.append(e('h3',{},'Manuelle Entscheidung'),decisions,e('p',{class:'record-note'},'Für telefonisch oder persönlich bestätigte Zu- und Absagen.'),payments(),complaints(),files(),e('div',{class:'record-actions'},btn('Anfrage entfernen',()=>archiveRecord(r),'ghost small record-remove')));
+    }
+    more.append(e('h3',{},'Originalanfrage'),e('pre',{},JSON.stringify(r.original,null,2)),e('h3',{},'Verlauf'));
+    r.history.forEach(h=>more.append(e('p',{class:'record-note'},new Date(h.at).toLocaleString('de-CH')+' · '+(EVENTS[h.kind]||'Angaben aktualisiert'))));root.append(more);
+  }
+  function editDetails(name){const more=$('#recordDetails');more.open=true;const field=more.querySelector('[name='+name+']');field?.focus();more.scrollIntoView({block:'center',behavior:'smooth'});}
   async function decision(status){
-    if(selected.document.status===status){root.prepend(e('p',{class:'record-note',role:'status'},'Ovaj ishod je već zabeležen. Za korekciju koristi „Izmeni cenu / datum“.'));return;}
-    if(status==='Prihvaćeno'&&selected.document.quotedPrice==null&&selected.document.agreedPrice==null){
-      const f=e('form',{class:'record-alert',onsubmit:async ev=>{ev.preventDefault();await mutate({action:'decision',status,agreedPrice:new FormData(f).get('agreedPrice')});}},e('p',{},'Cena još nije zabeležena. Unesi dogovoreni iznos; današnji datum se beleži automatski.'),e('label',{},'Dogovorena cena (CHF)',e('input',{type:'number',name:'agreedPrice',min:'0',step:'.01',required:true})),e('p',{},e('button',{type:'submit',class:'btn'},'Potvrdi dogovor')));
-      $('#decisionInline').replaceChildren(f);f.querySelector('input').focus();return;
+    const d=selected.document;
+    if(d.status===status)return;
+    if(status==='Prihvaćeno'&&d.quotedPrice==null&&d.agreedPrice==null){
+      const form=e('form',{class:'record-alert',onsubmit:async ev=>{ev.preventDefault();await mutate({action:'decision',status,agreedPrice:new FormData(form).get('agreedPrice')});}},input('Vereinbarter Betrag (CHF)','agreedPrice','number','',true),e('button',{type:'submit',class:'btn'},'Zusage speichern'));$('#inlineAction').replaceChildren(form);form.querySelector('input').focus();return;
     }
     await mutate({action:'decision',status});
   }
-  function editDecision(){const target=$('#recordForm [name=agreedPrice]');target.closest('details').open=true;target.focus();target.scrollIntoView({block:'center',behavior:'smooth'});}
   function schedule(){
     const d=selected.document;
-    const f=e('form',{class:'record-alert',onsubmit:async ev=>{ev.preventDefault();await mutate({action:'appointment',...Object.fromEntries(new FormData(f))});}},e('strong',{},'Zakaži termin montaže'),e('p',{class:'record-note'},[d.name||d.company,d.address,d.postalCode].filter(Boolean).join(' · ')),e('div',{class:'record-fields'},e('label',{},'Datum montaže',e('input',{type:'date',name:'date',value:d.appointmentAt||today(),required:true})),e('label',{},'Vreme montaže',e('input',{type:'time',name:'time',value:d.appointmentTime||'',required:true})),e('label',{class:'wide'},'Kratka napomena (neobavezno)',e('input',{name:'note',value:d.appointmentNote||'',maxlength:'2000'}))),e('p',{class:'record-note'},'Švajcarsko lokalno vreme. Čuva se interni termin; poruke ili kalendarski pozivi se ne šalju.'),e('button',{type:'submit',class:'btn'},'Sačuvaj termin'));
-    $('#appointmentInline').replaceChildren(f);f.querySelector('[name=date]').focus();f.scrollIntoView({block:'center',behavior:'smooth'});
+    const form=e('form',{class:'record-appointment',onsubmit:async ev=>{ev.preventDefault();await mutate({action:'appointment',...Object.fromEntries(new FormData(form))});}},e('h3',{},'Montagetermin'),e('div',{class:'record-fields'},input('Datum','date','date',d.appointmentAt||today(),true),input('Uhrzeit','time','time',d.appointmentTime||'',true),input('Notiz (optional)','note','text',d.appointmentNote||'')),e('p',{class:'record-note'},'Schweizer Ortszeit. Der Termin wird intern gespeichert.'),e('button',{type:'submit',class:'btn'},'Termin speichern'));$('#inlineAction').replaceChildren(form);form.querySelector('input').focus();
   }
-  function intakeSummary(intake){
-    const box=e('section',{class:'record-request-summary'},e('h3',{},intake.status==='priced'?'Automatski pripremljena ponuda':'Potrebna je dopuna upita'));
-    const quote=intake.quote;
-    if(quote){
-      const number='GTT-'+selected.id.replace(/^GTT-/,'').slice(0,8).toUpperCase()+'-'+String(intake.version||quote.version||1).padStart(3,'0');
-      box.append(e('p',{class:'record-note'},'Ponuda '+number+' · '+day(quote.calculatedAt||intake.processedAt)));
-      const rows=e('div',{class:'record-quote-lines'});
-      for(const [key,label]of [['fenster','Prozori'],['tueren','Vrata / plise']])if(quote.areas?.[key])rows.append(e('div',{},e('span',{},label+' · '+Number(quote.areas[key]).toLocaleString('de-CH',{maximumFractionDigits:4})+' m²'),e('span',{},money(quote.rates[key])+' / m²')));
-      rows.append(e('div',{},e('strong',{},'Ukupna ponuda'),e('strong',{},money(quote.totalCHF))));box.append(rows);
-      if(quote.discount)box.append(e('p',{class:'record-note'},quote.discount.name+' · '+quote.discount.percent+'% već uračunato u jedinične cene.'));
-    }
-    const questions=intake.clarification||[];
-    if(questions.length)box.append(e('p',{class:'record-note'},'Podaci koji nedostaju / potrebna provera:'),e('ul',{},...questions.map(q=>e('li',{},typeof q==='string'?q:q.question))));
-    const emailStatus={preview_only:'Test pregled: poruka nije poslata.',queued:'Poruka čeka slanje.',sending:'Slanje poruke je u toku.',accepted:'Poruka je predata email servisu. Prijem u sandučetu je zasebna provera.',failed:'Slanje poruke nije uspelo; potreban je pregled.',not_available:'Email kupca nije zabeležen; poruka nije poslata.',blocked:'Slanje čeka proveru podešavanja.',manual_review:'Potrebna je stručna provera.'}[intake.email?.status]||'Status slanja se proverava.';
-    box.append(e('p',{class:'record-note'},emailStatus),btn(quote?'Pogledaj ponudu':'Pogledaj poruku za dopunu',async()=>{
-      try{const data=await api('/'+selected.id+'/offer');const frame=e('iframe',{title:'Pregled ponude kupcu',sandbox:'',srcdoc:data.html,style:'width:100%;height:70vh;border:0'});const dialog=e('dialog',{class:'record-offer-dialog'},e('div',{class:'record-head'},e('strong',{},data.reference||'Pregled ponude'),btn('Zatvori',()=>{dialog.close();dialog.remove();})),frame);document.body.append(dialog);dialog.showModal();}catch(err){error(err);}
-    }));return box;
+  function quoteSummary(intake){
+    const box=e('section',{class:'record-quote-summary'});
+    const messages={preview_only:'Testvorschau: Keine E-Mail versendet.',queued:'Offerte wird zum Versand vorbereitet.',processing:'E-Mail wird versendet.',accepted:'Offerte vom E-Mail-Dienst angenommen.',failed:'Versand fehlgeschlagen. Bitte prüfen.',unknown:'Versandausgang unklar. Bitte prüfen.',not_available:'Keine Kunden-E-Mail vorhanden.'};
+    if(intake.status!=='priced')box.append(e('h3',{},'Weitere Angaben erforderlich'),e('ul',{},...(intake.clarification||[]).map(q=>e('li',{},typeof q==='string'?q:q.question))));
+    box.append(e('p',{class:'record-note'},messages[intake.email?.status]||'Versandstatus wird geprüft.'),btn(intake.quote?'Offerte ansehen':'Rückfrage ansehen',async()=>{try{const data=await api('/'+selected.id+'/offer');const dialog=e('dialog',{class:'record-offer-dialog'});const frame=e('iframe',{title:'Kundenofferte',sandbox:'',style:'width:100%;height:70vh;border:0'});frame.srcdoc=data.html;dialog.append(e('div',{class:'record-head'},e('strong',{},data.reference||'Offerte'),btn('Schliessen',()=>dialog.close())),frame);dialog.addEventListener('close',()=>dialog.remove());document.body.append(dialog);dialog.showModal();}catch(err){error(err);}}));return box;
   }
-  async function mutate(body){if(busy)return;if(body.action!=='update'&&$('#recordForm')?.dataset.dirty==='true'){error(Error('Prvo sačuvaj izmene kartona.'));return;}busy=true;root.querySelectorAll('button').forEach(b=>b.disabled=true);try{selected=(await api('/'+selected.id,{method:'PATCH',json:{...body,revision:selected.revision}})).record;renderRecord();root.prepend(e('p',{class:'record-note',role:'status'},'✓ Sačuvano · verzija '+selected.revision));}catch(err){error(err);}finally{busy=false;root.querySelectorAll('button').forEach(b=>b.disabled=false);}}
   function payments(){
-    const box=e('section',{class:'card'},e('h2',{},'Uplate'),e('p',{class:'record-note'},'Ručna evidencija primljenih uplata.'));
-    selected.document.payments.forEach(p=>box.append(e('div',{class:'record-log'},e('strong',{},money(p.amount)),e('p',{},day(p.date)+' · '+p.note))));
-    const f=e('form',{onsubmit:async ev=>{ev.preventDefault();await mutate({action:'payment',...Object.fromEntries(new FormData(f))});}},e('div',{class:'record-fields'},e('label',{},'Iznos (CHF)',e('input',{name:'amount',type:'number',min:'.01',step:'.01',required:true})),e('label',{},'Datum',e('input',{name:'date',type:'date',value:today(),required:true})),e('label',{class:'wide'},'Napomena / referenca',e('input',{name:'note',maxlength:'1000'}))),e('p',{},e('button',{class:'btn ghost small',type:'submit'},'Zabeleži uplatu')));box.append(f);return box;
+    const d=selected.document,paid=d.payments.reduce((sum,p)=>sum+p.amount,0),base=d.invoiceAmount??(['Prihvaćeno','Montaža','Završeno'].includes(d.status)?d.agreedPrice:null);
+    const box=e('section',{class:'record-extra'},e('h3',{},'Rechnung und Zahlungen'),e('p',{class:'record-note'},'Smallinvoice ist noch nicht verbunden. Die Anbindung wird vorbereitet.'),e('p',{},'Bezahlt: '+money(paid)+(base!=null?' · Offen: '+money(Math.max(0,base-paid)):'')));
+    d.payments.forEach(p=>box.append(e('p',{class:'record-note'},date(p.date)+' · '+money(p.amount)+' · '+p.note)));
+    const form=e('form',{onsubmit:async ev=>{ev.preventDefault();await mutate({action:'payment',...Object.fromEntries(new FormData(form))});}},e('div',{class:'record-fields'},input('Erhaltene Zahlung (CHF)','amount','number','',true),input('Zahlungsdatum','date','date',today(),true),input('Notiz / Referenz','note')),e('button',{type:'submit',class:'btn ghost small'},'Zahlung erfassen'));box.append(form);return box;
   }
   function complaints(){
-    const box=e('section',{class:'card'},e('h2',{},'Reklamacije'));
-    selected.document.complaints.forEach(c=>box.append(e('div',{class:'record-log'},e('strong',{},c.status+' · '+day(c.date)),e('p',{},c.description),e('p',{},[c.owner,c.due?'Rok: '+day(c.due):'',c.resolution].filter(Boolean).join(' · ')),btn('Otvori reklamaciju',()=>edit(c)))));
-    const holder=e('div');box.append(btn('Nova reklamacija',()=>edit({date:today(),status:'Otvorena'})),holder);
-    function edit(c){const f=e('form',{onsubmit:async ev=>{ev.preventDefault();await mutate({action:'complaint',complaint:{...Object.fromEntries(new FormData(f)),...(c.id?{id:c.id}:{})}});}});const fields=[["Datum","date","date"],["Odgovorna osoba","owner","text"],["Rok","due","date"],["Opis","description","textarea"],["Rešenje","resolution","textarea"],["Datum rešavanja","resolvedAt","date"]];if(c.id)f.append(e('input',{name:'id',type:'hidden',value:c.id}));fields.forEach(([label,key,type])=>f.append(e('label',{},label,type==='textarea'?e('textarea',{name:key,required:key==='description'},c[key]||''):e('input',{type,name:key,value:c[key]||''}))));const status=e('select',{name:'status'},...['Otvorena','U radu','Rešena'].map(s=>e('option',{value:s},s)));status.value=c.status;f.append(e('label',{},'Status',status),e('p',{},e('button',{type:'submit',class:'btn ghost small'},'Sačuvaj reklamaciju')));holder.replaceChildren(f);}
-    return box;
+    const labels={'Otvorena':'Offen','U radu':'In Bearbeitung','Rešena':'Erledigt'},box=e('section',{class:'record-extra'},e('h3',{},'Reklamationen')),holder=e('div');
+    selected.document.complaints.forEach(c=>box.append(e('p',{},e('strong',{},labels[c.status]||c.status),e('span',{},' · '+c.description+' '),btn('Bearbeiten',()=>edit(c)))));
+    box.append(btn('Reklamation erfassen',()=>edit({date:today(),status:'Otvorena'})),holder);
+    function edit(c){
+      const form=e('form',{onsubmit:async ev=>{ev.preventDefault();await mutate({action:'complaint',complaint:{...Object.fromEntries(new FormData(form)),...(c.id?{id:c.id}:{})}});}});
+      const fields=e('div',{class:'record-fields'});for(const [label,key,type]of [['Datum','date','date'],['Verantwortlich','owner','text'],['Frist','due','date'],['Beschreibung','description','textarea'],['Lösung','resolution','textarea'],['Erledigt am','resolvedAt','date']])fields.append(input(label,key,type,c[key]||'',key==='description'));
+      const states=e('div',{class:'record-actions'});for(const [value,label]of Object.entries(labels)){const radio=e('input',{type:'radio',name:'status',value});radio.checked=c.status===value;states.append(e('label',{},radio,label));}
+      form.append(fields,states,e('button',{type:'submit',class:'btn ghost small'},'Reklamation speichern'));holder.replaceChildren(form);
+    }return box;
   }
-  function files(){const r=selected;const box=e('section',{class:'card'},e('h2',{},'Dokumenti i fotografije'),e('p',{class:'record-note'},'Potvrda dogovora, ponuda, merenje, montaža ili reklamacija. Dokumenti su dostupni kroz admin prijavu. PDF, JPG, PNG ili WebP do 2 MB. U opisu reklamacije navedi naziv slike.'));
-    const items=e('div',{class:'record-files'});r.files.forEach(f=>items.append(btn(f.name,async()=>{try{const blob=await api('/'+r.id+'/files/'+f.id,{file:true});const url=URL.createObjectURL(blob);const a=e('a',{href:url,download:f.name});a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);}catch(err){error(err);}})));box.append(items);
-    box.append(e('input',{type:'file',accept:'application/pdf,image/jpeg,image/png,image/webp','aria-label':'Priloži dokument ili sliku',onchange:async ev=>{try{if($('#recordForm')?.dataset.dirty==='true')throw Error('Prvo sačuvaj izmene kartona.');const file=ev.target.files[0];if(file.size>2097152)throw Error('Dokument mora biti manji od 2 MB.');const body=new FormData();body.append('file',file);await api('/'+r.id+'/files',{method:'POST',body});await open(r.id);}catch(err){error(err);}}}));return box;
+  function files(){
+    const r=selected,box=e('section',{class:'record-extra'},e('h3',{},'Dokumente und Fotos'),e('p',{class:'record-note'},'PDF, JPG, PNG oder WebP bis 2 MB. Nur nach Anmeldung verfügbar.'));
+    r.files.forEach(f=>box.append(btn(f.name,async()=>{try{const blob=await api('/'+r.id+'/files/'+f.id,{file:true});const url=URL.createObjectURL(blob);e('a',{href:url,download:f.name}).click();setTimeout(()=>URL.revokeObjectURL(url),10000);}catch(err){error(err);}})));
+    box.append(e('input',{type:'file',accept:'application/pdf,image/jpeg,image/png,image/webp','aria-label':'Dokument oder Bild anhängen',onchange:async ev=>{try{if($('#recordForm')?.dataset.dirty==='true')throw Error('Bitte zuerst Ihre Änderungen speichern.');const file=ev.target.files[0];if(!file)return;if(file.size>2097152)throw Error('Die Datei darf höchstens 2 MB gross sein.');const body=new FormData();body.append('file',file);await api('/'+r.id+'/files',{method:'POST',body});await open(r.id);}catch(err){error(err);}}}));return box;
   }
-  document.querySelectorAll('[data-admin-tab]').forEach(b=>b.addEventListener('click',()=>{if(selected&&$('#recordForm')?.dataset.dirty==='true'&&!confirm('Napusti nesačuvane izmene?'))return;document.querySelectorAll('[data-admin-panel]').forEach(p=>p.hidden=p.dataset.adminPanel!==b.dataset.adminTab);document.querySelectorAll('[data-admin-tab]').forEach(t=>t.setAttribute('aria-selected',String(t===b)));if(b.dataset.adminTab==='records')load();}));
+  document.querySelectorAll('[data-admin-tab]').forEach(button=>button.addEventListener('click',()=>{if(selected&&$('#recordForm')?.dataset.dirty==='true'&&!confirm('Ungespeicherte Änderungen verwerfen?'))return;document.querySelectorAll('[data-admin-panel]').forEach(panel=>panel.hidden=panel.dataset.adminPanel!==button.dataset.adminTab);document.querySelectorAll('[data-admin-tab]').forEach(tab=>tab.setAttribute('aria-selected',String(tab===button)));if(button.dataset.adminTab==='records')load();}));
   window.addEventListener('gtt:admin-login',load);
-  window.addEventListener('gtt:admin-logout',()=>{list=[];selected=null;root.replaceChildren();});
+  window.addEventListener('gtt:admin-logout',()=>{records=[];selected=null;root.replaceChildren();});
   if(!document.getElementById('appView').hidden)load();
 })();
