@@ -1,6 +1,6 @@
 (() => {
   const root=document.getElementById('recordsRoot');
-  const STATUS={'Novi upit':'Neue Anfrage','Ponuda poslata':'Offerte versendet','Čeka odgovor':'Offerte versendet','Prihvaćeno':'Angenommen','Odbijeno':'Abgelehnt','Montaža':'Montage','Završeno':'Abgeschlossen','Reklamationen':'Reklamationen'};
+  const STATUS={'legacy_review':'Für Goran prüfen','Novi upit':'Neue Anfrage','Ponuda poslata':'Offerte versendet','Čeka odgovor':'Offerte versendet','Prihvaćeno':'Angenommen','Odbijeno':'Abgelehnt','Montaža':'Montage','Završeno':'Abgeschlossen','Reklamationen':'Reklamationen'};
   const STEPS=['Novi upit','Ponuda poslata','Prihvaćeno','Odbijeno','Montaža','Završeno','Reklamationen'];
   const SOURCE={'Kalkulator':'Kalkulator','Kontakt':'Kontaktformular','B2B':'B2B','Ručni unos':'Manuell'};
   const EVENTS={created:'Anfrage angelegt',archive:'Anfrage archiviert',restore:'Anfrage wiederhergestellt','historical-complete':'Frühere Anfrage abgeschlossen','start-installation':'Montage begonnen',complete:'Auftrag abgeschlossen',decision:'Entscheidung erfasst',payment:'Zahlung erfasst',complaint:'Reklamation aktualisiert',appointment:'Montagetermin geplant','cancel-appointment':'Montagetermin abgesagt',quote_intake:'Masse und Offerte automatisch erstellt',quote_email:'E-Mail-Versand bearbeitet',customer_acceptance:'Bestätigung des Kunden erhalten'};
@@ -26,6 +26,8 @@
   const offerReference=r=>r.document.intake?.version?'GTT-'+String(r.document.intake.version).padStart(3,'0'):'';
   const referenceText=r=>offerReference(r)?(r.document.intake.quote?'Offerte ':'Anfrage ')+offerReference(r):'';
   const isHistorical=r=>r.historical??(!!r.original?.submissionId&&!r.original?.inquiryId);
+  const needsHistoricalReview=r=>isHistorical(r)&&!r.document.archivedAt&&listStage(r.document)==='Novi upit';
+  const recordStage=r=>needsHistoricalReview(r)?'legacy_review':listStage(r.document);
   function recordLink(r){
     const url=new URL(location.href);url.searchParams.set('anfrage',r.id);
     return e('a',{href:url.pathname+url.search,class:'record-open-link','aria-label':'Anfrage '+recordName(r)+(offerReference(r)?' · '+offerReference(r):'')+' öffnen',onclick:ev=>{
@@ -52,7 +54,10 @@
   function error(err){const box=$('#recordError');if(box)box.textContent=err.message;else root.prepend(e('p',{class:'record-error',role:'alert'},err.message));}
   async function load(){
     try{
-      const [recordData,complaintData]=await Promise.all([api(archived?'?archived=1':''),api('',{complaint:true})]);records=recordData.records;offerSummary=recordData.offerSummary;complaintCases=complaintData.complaints;renderList();
+      const [recordData,complaintData]=await Promise.all([api(archived?'?archived=1':''),api('',{complaint:true})]);records=recordData.records;offerSummary=recordData.offerSummary;complaintCases=complaintData.complaints;
+      if(filter==='legacy_review'&&!records.some(needsHistoricalReview))filter='Novi upit';
+      if(!deepLinkResolved&&!archived&&records.some(needsHistoricalReview)&&!records.some(r=>recordStage(r)==='Novi upit'))filter='legacy_review';
+      renderList();
       if(!deepLinkResolved){deepLinkResolved=true;const params=new URL(location.href).searchParams,id=params.get('anfrage'),complaint=params.get('reklamation');if(/^[a-f0-9-]{36}$/i.test(complaint||''))await openComplaint(complaint);else if(/^GTT-[a-f0-9]{24}$/.test(id||''))await open(id);}
     }catch(err){root.replaceChildren(e('h2',{},'Anfragen'),e('p',{class:'record-error'},err.message),btn('Erneut versuchen',load));}
   }
@@ -61,19 +66,21 @@
     selected=null;
     root.replaceChildren(e('div',{class:'record-head'},e('div',{},e('h2',{},archived?'Archiv':'Anfragen'),e('p',{class:'record-note'},archived?'Archivierte Anfragen können jederzeit wiederhergestellt werden.':'Website-Anfragen und Offerten werden automatisch erfasst.')),e('div',{class:'record-actions'},...(archived?[]:[btn('Kunde hinzufügen',manual,'')]),btn('Aktualisieren',load))));
     const counters=e('div',{class:'record-summary'});
-    STEPS.map(s=>[s,STATUS[s]]).forEach(([s,label])=>counters.append(e('button',{type:'button',class:s===filter?'active':'','aria-pressed':String(s===filter),onclick:()=>{filter=s;montageFilter='';inquiryFilter='';complaintFilter='active';renderList();}},e('span',{},label),e('strong',{class:'record-kpi-value'},String(records.filter(r=>listStage(r.document)===s).length+(s==='Reklamationen'&&!archived?complaintCases.filter(c=>c.status!=='Erledigt').length:0))))));
+    const steps=records.some(needsHistoricalReview)?['legacy_review',...STEPS]:STEPS;
+    steps.map(s=>[s,STATUS[s]]).forEach(([s,label])=>counters.append(e('button',{type:'button',class:s===filter?'active':'','aria-pressed':String(s===filter),onclick:()=>{filter=s;montageFilter='';inquiryFilter='';complaintFilter='active';renderList();}},e('span',{},label),e('strong',{class:'record-kpi-value'},String(records.filter(r=>recordStage(r)===s).length+(s==='Reklamationen'&&!archived?complaintCases.filter(c=>c.status!=='Erledigt').length:0))))));
     root.append(e('div',{class:'record-stage-bar'},counters,btn(archived?'← Aktive Anfragen':'Archiv',()=>{archived=!archived;filter=archived?'':'Novi upit';search='';load();})));
+    if(filter==='legacy_review')root.append(e('p',{class:'record-note'},'Frühere Anfragen für Goran: prüfen und bereits erledigte Aufträge mit „Abschliessen“ nach „Abgeschlossen“ verschieben.'));
     if(filter==='Novi upit'){
       const phases=e('div',{class:'record-actions','aria-label':'Anfragebearbeitung'});
       for(const [value,label]of [['measure','Ausmessen erforderlich'],['review','Prüfung erforderlich']]){
-        const count=records.filter(r=>listStage(r.document)==='Novi upit'&&(value==='measure'?needsMeasurement(r.document):!needsMeasurement(r.document))).length;
+        const count=records.filter(r=>recordStage(r)==='Novi upit'&&(value==='measure'?needsMeasurement(r.document):!needsMeasurement(r.document))).length;
         phases.append(btn(label+' '+count,()=>{inquiryFilter=inquiryFilter===value?'':value;renderList();},inquiryFilter===value?'small':'ghost small'));
       }root.append(phases);
     }
     if(filter==='Montaža'){
       const phases=e('div',{class:'record-actions record-montage-filters','aria-label':'Montagestatus'});
       for(const [value,label]of [['planned','Termin vereinbart'],['working','In Arbeit']]){
-        const count=records.filter(r=>listStage(r.document)==='Montaža'&&montageState(r.document)===value).length;
+        const count=records.filter(r=>recordStage(r)==='Montaža'&&montageState(r.document)===value).length;
         const button=btn(label+' '+count,()=>{montageFilter=montageFilter===value?'':value;drawRows();phases.querySelectorAll('button').forEach(b=>{const active=b.dataset.montageFilter===montageFilter;b.setAttribute('aria-pressed',String(active));b.classList.toggle('ghost',!active);});},montageFilter===value?'small':'ghost small');
         button.dataset.montageFilter=value;button.setAttribute('aria-pressed',String(montageFilter===value));phases.append(button);
       }
@@ -84,7 +91,7 @@
   }
   function drawRows(){
     const box=$('#recordRows');box.replaceChildren();
-    const found=records.filter(r=>(!filter||listStage(r.document)===filter)&&(filter!=='Novi upit'||!inquiryFilter||(inquiryFilter==='measure'?needsMeasurement(r.document):!needsMeasurement(r.document)))&&(filter!=='Montaža'||!montageFilter||montageState(r.document)===montageFilter)&&(!search||[r.id,offerReference(r),...(r.offerReferences||[]),...Object.values(r.document).filter(x=>typeof x==='string')].join(' ').toLowerCase().includes(search.trim().toLowerCase())));
+    const found=records.filter(r=>(!filter||recordStage(r)===filter)&&(filter!=='Novi upit'||!inquiryFilter||(inquiryFilter==='measure'?needsMeasurement(r.document):!needsMeasurement(r.document)))&&(filter!=='Montaža'||!montageFilter||montageState(r.document)===montageFilter)&&(!search||[r.id,offerReference(r),...(r.offerReferences||[]),...Object.values(r.document).filter(x=>typeof x==='string')].join(' ').toLowerCase().includes(search.trim().toLowerCase())));
     if(filter==='Montaža')found.sort((a,b)=>((a.document.appointmentAt||'9999')+'T'+(a.document.appointmentTime||'')).localeCompare((b.document.appointmentAt||'9999')+'T'+(b.document.appointmentTime||'')));
     found.filter(()=>filter!=='Reklamationen'||complaintFilter!=='Erledigt').forEach(r=>{const d=r.document;box.append(recordRow(r,e('div',{},recordLink(r),d.isTest?e('span',{class:'record-badge test'},'TEST'):null,e('small',{},d.company||d.email||d.phone),referenceText(r)?e('small',{},referenceText(r)):null,hasAppointment(d)?e('small',{},'Montagetermin: '+appointmentText(d)):null),e('div',{class:'record-source'},SOURCE[r.source]||r.source,e('small',{},date(r.received_at))),priceCell(r),listActions(r)));});
     if(filter==='Reklamationen'&&!archived)complaintCases.filter(c=>(complaintFilter==='Erledigt'?c.status==='Erledigt':c.status!=='Erledigt')&&(!search||[c.lookup,c.email,c.description,c.matched_name,'REK-'+String(c.number).padStart(3,'0')].join(' ').toLowerCase().includes(search.trim().toLowerCase()))).forEach(c=>{
@@ -110,7 +117,7 @@
     form.append(e('label',{},'Bearbeitungsstatus',status),input('Notiz / Lösung','resolution','textarea',c.resolution),e('button',{type:'submit',class:'btn small'},'Bearbeitung speichern'));root.append(form);$('.record-heading').focus();root.scrollIntoView({block:'start'});
   }
   function listActions(r){
-    const d=r.document,actions=e('div',{class:'record-row-actions'},e('span',{class:'record-badge'},stageLabel(d)));
+    const d=r.document,actions=e('div',{class:'record-row-actions'},e('span',{class:'record-badge'},needsHistoricalReview(r)?'Für Goran prüfen':stageLabel(d)));
     if(d.intake?.quote&&d.intake.version)actions.append(btn('Offerte ansehen',()=>showOffer(r.id),'small'));
     else if((d.agreedPrice??d.quotedPrice)==null&&!d.archivedAt&&canonical(d.status)==='Novi upit')actions.append(btn('Ausmessen',()=>{if(!busy)open(r.id,'measurements');},'small'));
     if(isHistorical(r)&&!d.archivedAt&&d.status!=='Završeno')actions.append(btn('Abschliessen',()=>changeListedRecord(r,'historical-complete','✓ Auftrag abgeschlossen.'),'small'));
