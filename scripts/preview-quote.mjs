@@ -6,7 +6,7 @@ import {processQuoteIntake} from '../netlify/lib/quote-intake.mts';
 import {DEFAULT_OFFER} from '../netlify/lib/projects-store.mts';
 
 const db=await PGlite.create();
-for(const file of ['20261021010000_admin_records.sql','20261021014500_pending_history.sql','20261021021000_quote_intake.sql'])await db.exec(await readFile(new URL('../netlify/database/migrations/'+file,import.meta.url),'utf8'));
+for(const file of ['20261021010000_admin_records.sql','20261021014500_pending_history.sql','20261021023000_quote_intake.sql'])await db.exec(await readFile(new URL('../netlify/database/migrations/'+file,import.meta.url),'utf8'));
 const offer={...DEFAULT_OFFER,active:true,percent:15};
 const cases={
   standard:{record_source:'kontakt',plz:'9000',nachricht:'Funktionstest, keine Bestellung, bitte nicht anrufen. PLZ 9000. 2 Fenster je 120 x 140 cm und 1 Tür 90 x 210 cm.'},

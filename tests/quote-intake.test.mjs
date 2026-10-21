@@ -12,7 +12,7 @@ const preview={deploy:{context:'deploy-preview'}},production={deploy:{context:'p
 const fixture=(id,extra={})=>({inquiry_id:id,record_source:'kontakt',name:'TEST – Demo Customer',email:'test@example.invalid',telefon:'+41 00 000 00 00',plz:'9000',nachricht:'2 Fenster 120 x 140 cm, 1 Tür 90 x 210 cm',...extra});
 async function database(t){
   const db=await PGlite.create();t.after(()=>db.close());
-  for(const file of ['20261021010000_admin_records.sql','20261021014500_pending_history.sql','20261021021000_quote_intake.sql'])await db.exec(await readFile(new URL('../netlify/database/migrations/'+file,import.meta.url),'utf8'));
+  for(const file of ['20261021010000_admin_records.sql','20261021014500_pending_history.sql','20261021023000_quote_intake.sql'])await db.exec(await readFile(new URL('../netlify/database/migrations/'+file,import.meta.url),'utf8'));
   return db;
 }
 async function record(db,data){const input=fromSubmission(data);await createRecord(db,input);return input.id;}
