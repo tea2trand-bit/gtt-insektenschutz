@@ -154,7 +154,15 @@ export function redactMeasurementText(text: string, contacts: Record<string,stri
     if(value && value.length>=3) safe=safe.replaceAll(value,"[Kontakt entfernt]");
   }
   safe=safe.replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g,"[E-Mail entfernt]").replace(/\+\d[\d ()/.-]{6,}\d/g,"[Telefon entfernt]");
-  return safe.split(/\n|(?<=[.!?])\s+/).filter(line=>/fenster|tür|tuer|plissee|breit|höh|hoehe|height|width|\d\s*[x×]|\d\s*(?:cm|mm|m²|m2|qm)/iu.test(line)).join("\n");
+  return safe.split(/\n|(?<=[.!?])\s+/).filter(line=>/fenster|tür|tuer|plissee|breit|höh|hoehe|height|width|\d\s*[x×]|\d\s*(?:cm|mm|m²|m2|qm)/iu.test(line)).map(line=>{
+    const first=line.search(/fenster|tür|tuer|plissee|breite|höhe|hoehe|height|width/iu);
+    if(first<0)return line;
+    const count=line.slice(0,first).match(/(?:\d+|ein|eine|einen|eins|zwei|drei|vier|fünf|sechs|sieben|acht|neun|zehn)\s*(?:Stück|Stk\.?)?\s*$/iu);
+    const start=count?first-count[0].length:first;
+    const dimensions=[...line.matchAll(new RegExp(String.raw`${number}\s*(?:mm|cm|m)(?![\p{L}\d²])`,"giu"))];
+    const last=dimensions.at(-1);
+    return line.slice(start,last && last.index!>=start?last.index!+last[0].length:undefined).trim();
+  }).join("\n");
 }
 
 // Structured output is a proposal. Evidence and arithmetic are rechecked here.
