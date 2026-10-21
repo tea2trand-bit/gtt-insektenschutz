@@ -69,5 +69,21 @@ test('real Postgres engine: deduplication, prices, status audit, concurrent save
     await assert.rejects(recordsAPI(new Request('http://local',{method:'POST',body:JSON.stringify({...manual,name:'',company:''})}),db,[]),/ime klijenta/);
     await assert.rejects(recordsAPI(new Request('http://local',{method:'POST',body:JSON.stringify({...manual,phone:'',email:''})}),db,[]),/telefon ili email/);
     assert.equal(fromSubmission({record_source:'angebot',inquiry_id:'prefixed-price',berechneter_preis:'Fixpreis: CHF 186.–'}).original.price,186);
+    const archived=await changeRecord(db,mr.id,{revision:rejectedManual.revision,action:'archive'});
+    assert.ok(archived.document.archivedAt);assert.equal(archived.document.status,'Odbijeno');assert.equal(archived.document.agreedPrice,200);
+    assert.equal(archived.history[0].kind,'archive');
+    const activeList=await (await recordsAPI(new Request('http://local'),db,[])).json();assert.equal(activeList.records.some(x=>x.id===mr.id),false);
+    const archiveList=await (await recordsAPI(new Request('http://local?archived=1'),db,[])).json();assert.equal(archiveList.records.some(x=>x.id===mr.id),true);
+    await assert.rejects(changeRecord(db,mr.id,{revision:archived.revision,action:'decision',status:'Prihvaćeno'}),/Prvo ga vrati/);
+    const duplicateImport=await sendManual();assert.equal((await duplicateImport.json()).record.document.archivedAt,archived.document.archivedAt);
+    const restored=await changeRecord(db,mr.id,{revision:archived.revision,action:'restore'});assert.equal(restored.document.archivedAt,'');assert.equal(restored.document.status,'Odbijeno');assert.equal(restored.history[0].kind,'restore');
+    const legacy=fromSubmission({name:'TEST · Raniji upit',nachricht:'Originalni istorijski tekst'},{id:'0123456789abcdef01234567',form:'kontakt',at:'2026-07-15T05:34:11Z'});
+    await createRecord(db,legacy);const closed=await changeRecord(db,legacy.id,{revision:1,action:'historical-complete'});
+    assert.equal(closed.document.status,'Završeno');assert.equal(closed.document.agreedPrice,null);assert.equal(closed.document.decisionDate,'');assert.equal(closed.original.fields.nachricht,'Originalni istorijski tekst');assert.equal(closed.history[0].kind,'historical-complete');
+    await assert.rejects(changeRecord(db,mr.id,{revision:restored.revision,action:'historical-complete'}),/samo za ranije/);
+    const normal=await changeRecord(db,mr.id,{revision:restored.revision,action:'decision',status:'Prihvaćeno'});
+    await assert.rejects(changeRecord(db,mr.id,{revision:normal.revision,action:'complete'}),/Prvo zabeleži montažu/);
+    const installing=await changeRecord(db,mr.id,{revision:normal.revision,action:'start-installation'});assert.equal(installing.document.status,'Montaža');
+    const completed=await changeRecord(db,mr.id,{revision:installing.revision,action:'complete'});assert.equal(completed.document.status,'Završeno');assert.equal(completed.document.agreedPrice,200);assert.ok(completed.document.installedAt);
   }finally{await db.close();}
 });

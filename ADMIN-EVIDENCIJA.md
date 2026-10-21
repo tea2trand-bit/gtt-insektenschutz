@@ -14,7 +14,11 @@ Migracije su u `netlify/database/migrations/`. Hosted migracije primenjuje Netli
 
 „Dogovoren posao“ jednim klikom preuzima poslednju ponuđenu cenu i beleži današnji datum u Europe/Zurich vremenu; ako cena nedostaje, traži samo iznos. „Odbijeno“ beleži datum i ishod, a razlog je neobavezan. Ovo je interna evidencija administratorove odluke. Originalna ponuda ostaje sačuvana. Samo slanje ponude nikada ne prihvata posao.
 
-Raniji Netlify zapisi mogu se uvesti u adminu kao JSON niz sa `id`, `form_name`, `created_at`, `data`. Uvoz koristi sačuvani inquiry_id, kada postoji, ili originalni Netlify submission ID. Ponovljen uvoz ne prepisuje postojeći karton. Ranije forme bez novog ID-a ostaju u Netlify; njihov originalni ID koristi se u uvozu.
+Ručni panel za JSON uvoz uklonjen je posle završetka istorijskog prenosa. Novi upiti automatski dolaze iz Netlify događaja. Navigacija počinje sa Upiti, zatim Projekti i Sezonska ponuda; statusi imaju kompaktne brojače u jednom redu bez okvira.
+
+„Ukloni upit“ sklanja karton iz aktivne liste i KPI brojača u povratnu arhivu. „Vrati upit“ vraća isti karton sa istom cenom, statusom i istorijom. Obe radnje čuvaju verziju i koriste proveru revizije; ponovljeni istorijski uvoz ne vraća uklonjen karton. Arhivirani karton je dostupan za pregled, a poslovne izmene zahtevaju vraćanje u aktivnu evidenciju. Ovo ne briše izvorni Netlify submission niti već poslat email.
+
+Raniji preneti upiti bez novog inquiry_id imaju prečicu „Označi kao završeno“. Ona beleži današnju administratorsku radnju, bez izmišljene ranije cene, datuma dogovora ili stvarnog datuma montaže. Novi upiti prolaze kroz slanje ponude, odgovor kupca, prihvatanje/odbijanje, početak montaže i završetak; normalni početak/završetak traže sačuvan dogovor i cenu.
 
 „Dodaj klijenta“ unosi klijenta bez javne platforme, sa imenom ili firmom i telefonom ili emailom; ostala polja su neobavezna. Novi zapis koristi izvor Ručni unos, dobija stabilan ID i istoriju, i ne šalje email. Raniji upiti koji čekaju korisnikov pregled čuvaju se odvojeno u `gtt_pending_inquiries` i vide samo kroz admin API, bez pretvaranja u operativne poslove.
 

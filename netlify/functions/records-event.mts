@@ -5,6 +5,7 @@ import type { QueryDB } from "../lib/records.mts";
 import { getContext } from "@netlify/functions";
 import { deploymentContext, processQuoteIntake, type IntakeOptions } from "../lib/quote-intake.mts";
 import { importApprovedHistory } from "../lib/approved-history.mts";
+import { notifyTeam } from "../lib/team-notification.mts";
 
 export async function recordSubmission(data: Record<string,string>, db: QueryDB, context:any={}, options:IntakeOptions={}) {
   const input = fromSubmission(data);
@@ -13,6 +14,7 @@ export async function recordSubmission(data: Record<string,string>, db: QueryDB,
   // A duplicate delivery must resume a pending outbox job, without replacing
   // the original inquiry or creating another version/email.
   const intake=await processQuoteIntake(db,input.id,data,context,options);
+  if(options.mode!=='preview')await notifyTeam(db,input.id,'new_inquiry',context,{fetch:options.fetch}).catch(()=>console.error('Internal notification needs review'));
   return {...record,intake};
 }
 

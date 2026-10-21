@@ -6,11 +6,13 @@ import { recordsAPI } from '../netlify/lib/records-api.mts';
 import { createRecord, fromSubmission, RecordError } from '../netlify/lib/records.mts';
 import { checkPassword, issueToken, verifyRequest } from '../netlify/lib/projects-store.mts';
 import { recordSubmission } from '../netlify/functions/records-event.mts';
+import {handleOfferAcceptance} from '../netlify/functions/offer-acceptance.mts';
+import {recordMessageDE} from '../netlify/lib/record-messages-de.mts';
 import { validateSubmission } from '../netlify/edge-functions/validate-form-submission.js';
 
 const root=path.resolve(import.meta.dirname,'..');
 await mkdir(path.join(root,'.local-records'),{recursive:true});
-const db=await PGlite.create({dataDir:path.join(root,'.local-records/db')});
+const db=await PGlite.create({dataDir:path.resolve(root,process.env.GTT_PREVIEW_DB_DIR||'.local-records/db')});
 await db.exec('CREATE TABLE IF NOT EXISTS gtt_local_migrations(name text PRIMARY KEY)');
 const migrationDir=path.join(root,'netlify/database/migrations');
 for(const name of (await readdir(migrationDir)).filter(n=>n.endsWith('.sql')).sort()){
@@ -25,11 +27,14 @@ for(const [key,form,name,company,price]of [['private','angebot','TEST · Demo ku
 // Credentials apply only to loopback. Never read or copy production secrets.
 process.env.ADMIN_PASSWORD='gtt-demo-local';
 process.env.ADMIN_TOKEN_SECRET='local-preview-only';
+process.env.GTT_OFFER_ACCEPTANCE_SECRET='local-preview-only-offer-confirmation-secret';
 let offer={active:true,name:'Herbst-/Winteraktion',percent:15,fenster:true,tueren:true,validFrom:'2026-09-30',validUntil:'2027-02-28',text:''};
+await recordSubmission({record_source:'kontakt',inquiry_id:'preview-automatic-customer-confirmation',name:'TEST · Automatische Anfrage',email:'test@example.invalid',telefon:'+41 00 000 00 00',nachricht:'TEST. Keine Bestellung. PLZ 9000. 2 Fenster je 120 x 140 cm und 1 Tür 90 x 210 cm.'},db,{deploy:{context:'dev'}},{mode:'preview',offer,useAI:false});
 const json=(d,s=200)=>Response.json(d,{status:s,headers:{'Cache-Control':'no-store'}});
 const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg'};
 async function handle(req){
   const url=new URL(req.url);
+  if(url.pathname==='/offerte-bestaetigen')return handleOfferAcceptance(req,{deploy:{context:'dev'}},db);
   if(url.pathname==='/'&&req.method==='POST'){
     const values=Object.fromEntries(new URLSearchParams(await req.text()));
     const validation=validateSubmission({...values,formName:values['form-name']});
@@ -54,6 +59,6 @@ async function handle(req){
   if(!file.startsWith(root+path.sep)||!['.html','.js','.css','.svg','.png','.jpg','.webp','.jpeg','.ico'].includes(path.extname(file))||file.includes(path.sep+'node_modules'+path.sep)||file.includes(path.sep+'netlify'+path.sep))return new Response('Not found',{status:404});
   try{return new Response(await readFile(file),{headers:{'Content-Type':types[path.extname(file)]||'application/octet-stream'}});}catch{return new Response('Not found',{status:404});}
 }
-const server=createServer(async(req,res)=>{try{const chunks=[];for await(const c of req)chunks.push(c);const request=new Request('http://127.0.0.1:4400'+req.url,{method:req.method,headers:req.headers,...(chunks.length?{body:Buffer.concat(chunks)}:{})});const response=await handle(request);res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()));}catch(err){res.writeHead(err instanceof RecordError?err.status:500,{'Content-Type':'application/json'});res.end(JSON.stringify({error:err.message}));}});
+const server=createServer(async(req,res)=>{try{const chunks=[];for await(const c of req)chunks.push(c);const request=new Request('http://127.0.0.1:4400'+req.url,{method:req.method,headers:req.headers,...(chunks.length?{body:Buffer.concat(chunks)}:{})});const response=await handle(request);res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()));}catch(err){res.writeHead(err instanceof RecordError?err.status:500,{'Content-Type':'application/json'});res.end(JSON.stringify({error:err instanceof RecordError?recordMessageDE(err.message):"Die Anfrage konnte nicht verarbeitet werden."}));}});
 server.listen(4400,'127.0.0.1',()=>console.log('Lokalni admin: http://127.0.0.1:4400/admin · lozinka: gtt-demo-local · PGlite čuva test podatke na disku.'));
 async function stop(){server.close();await db.close();process.exit(0);}process.on('SIGINT',stop);process.on('SIGTERM',stop);

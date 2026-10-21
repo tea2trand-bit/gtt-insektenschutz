@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="bs">
+<html lang="de-CH">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -94,12 +94,12 @@ input::placeholder{color:#a3aba5}
 <section id="loginView" class="wrap" hidden>
   <div class="card login">
     <div class="brand"><span>✓</span><span><b>GTT</b> Admin</span></div>
-    <h1 style="margin-top:14px">Prijava</h1>
-    <p class="muted">Projekti, sezonska ponuda i evidencija upita na gtt-insektenschutz.ch</p>
+    <h1 style="margin-top:14px">Anmeldung</h1>
+    <p class="muted">Anfragen, Projekte und Saisonaktion auf gtt-insektenschutz.ch</p>
     <form id="loginForm">
-      <input id="pw" type="password" placeholder="Lozinka" autocomplete="current-password" required>
+      <input id="pw" type="password" placeholder="Passwort" autocomplete="current-password" required>
       <div class="err" id="loginErr"></div>
-      <button class="btn" style="width:100%" type="submit">Prijavi se</button>
+      <button class="btn" style="width:100%" type="submit">Anmelden</button>
     </form>
   </div>
 </section>
@@ -110,80 +110,80 @@ input::placeholder{color:#a3aba5}
     <div class="wrap">
       <div class="brand"><span>✓</span><span><b>GTT</b> Admin</span></div>
       <div style="display:flex;gap:8px">
-        <a class="btn ghost small" href="/#projekte" target="_blank" rel="noopener">Pogledaj stranicu ↗</a>
-        <button class="btn ghost small" id="logoutBtn">Odjava</button>
+        <a class="btn ghost small" href="/#projekte" target="_blank" rel="noopener">Website ansehen ↗</a>
+        <button class="btn ghost small" id="logoutBtn">Abmelden</button>
       </div>
     </div>
   </header>
 
   <main class="wrap">
-    <nav class="admin-nav" aria-label="Admin sekcije">
-      <button type="button" class="btn ghost" data-admin-tab="projects" aria-selected="false">Projekti</button>
-      <button type="button" class="btn ghost" data-admin-tab="offer" aria-selected="false">Sezonska ponuda</button>
-      <button type="button" class="btn ghost" data-admin-tab="records" aria-selected="true">Upiti / Anfragen</button>
+    <nav class="admin-nav" aria-label="Admin-Bereiche">
+      <button type="button" class="btn ghost" data-admin-tab="records" aria-selected="true">Anfragen</button>
+      <button type="button" class="btn ghost" data-admin-tab="projects" aria-selected="false">Projekte</button>
+      <button type="button" class="btn ghost" data-admin-tab="offer" aria-selected="false">Saisonaktion</button>
     </nav>
     <section class="card records" data-admin-panel="records" id="recordsRoot" aria-live="polite"></section>
     <section class="card" id="offerCard" data-admin-panel="offer" hidden>
-      <h2>Sezonska ponuda (popust)</h2>
-      <p class="muted" style="margin-top:-8px">Popust se automatski primjenjuje u kalkulatoru i na cijenama po m², a na stranici se pojavi obavijest. Kupac i vi u e-mailu vidite da je popust uračunat.</p>
+      <h2>Saisonaktion (Rabatt)</h2>
+      <p class="muted" style="margin-top:-8px">Der Rabatt wird automatisch im Rechner, in den Quadratmeterpreisen und in der Offerte berücksichtigt. Die Aktion erscheint auf der Website.</p>
       <form id="offerForm" class="offer-form">
-        <label class="switch"><input type="checkbox" id="ofActive"><span class="knob"></span> <span id="ofActiveLabel">Ponuda isključena</span></label>
+        <label class="switch"><input type="checkbox" id="ofActive"><span class="knob"></span> <span id="ofActiveLabel">Aktion deaktiviert</span></label>
         <div class="grid2">
-          <label>Naziv akcije (vidljiv na stranici)
+          <label>Aktionsname (auf der Website sichtbar)
             <input id="ofName" maxlength="60" placeholder="Herbst-/Winteraktion">
           </label>
-          <label>Popust u %
+          <label>Rabatt in %
             <input id="ofPercent" type="number" min="1" max="50" step="1" value="10">
           </label>
         </div>
         <div class="chips">
-          <span class="muted">Važi za:</span>
-          <label><input type="checkbox" id="ofFenster" checked> Prozori (Fenster)</label>
-          <label><input type="checkbox" id="ofTueren" checked> Vrata / Plise (Türen)</label>
+          <span class="muted">Gilt für:</span>
+          <label><input type="checkbox" id="ofFenster" checked> Fenster</label>
+          <label><input type="checkbox" id="ofTueren" checked> Türen / Plissee</label>
         </div>
         <div class="grid2">
-          <label>Važi od (neobavezno)
+          <label>Gültig ab (optional)
             <input id="ofFrom" type="date">
           </label>
-          <label>Važi do (neobavezno)
+          <label>Gültig bis (optional)
             <input id="ofUntil" type="date">
           </label>
         </div>
-        <label>Vlastiti tekst obavijesti (neobavezno, na njemačkom)
-          <input id="ofText" maxlength="160" placeholder="npr. Jetzt bestellen und im Frühling profitieren – 15% Herbstrabatt">
+        <label>Eigener Hinweistext (optional)
+          <input id="ofText" maxlength="160" placeholder="z. B. Jetzt bestellen und im Frühling profitieren – 15% Herbstrabatt">
         </label>
         <div class="offer-preview" id="ofPreview"></div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-          <button class="btn" type="submit" id="ofSave">Sačuvaj ponudu</button>
+          <button class="btn" type="submit" id="ofSave">Aktion speichern</button>
           <span class="status" id="ofStatus"></span>
         </div>
       </form>
     </section>
 
     <section class="card" data-admin-panel="projects" hidden>
-      <h2>Dodaj nove projekte</h2>
+      <h2>Neue Projekte hinzufügen</h2>
       <label class="drop" id="drop">
-        <strong>Prevuci slike ili video ovdje</strong>
-        <span class="muted">ili klikni za izbor (može više odjednom)</span>
+        <strong>Bilder oder Videos hierher ziehen</strong>
+        <span class="muted">oder Dateien auswählen (Mehrfachauswahl möglich)</span>
         <input id="fileInput" type="file" accept="image/*,video/mp4,video/quicktime,video/webm" multiple hidden>
       </label>
       <ul class="tips">
-        <li>Slike se automatski smanjuju i optimizuju prije slanja.</li>
-        <li>Video: najbolje MP4 (H.264), do 500 MB. Na iPhoneu: Postavke → Kamera → Formati → „Najkompatibilnije“, inače video možda neće raditi na Android/Chrome.</li>
-        <li>Naslov i opis se prikazuju na stranici, zato ih piši na njemačkom (npr. „Plissee-Tür St. Gallen“).</li>
+        <li>Bilder werden vor dem Hochladen automatisch verkleinert und optimiert.</li>
+        <li>Video: bevorzugt MP4 (H.264), bis 500 MB. Auf dem iPhone: Einstellungen → Kamera → Formate → «Maximale Kompatibilität».</li>
+        <li>Titel und Beschreibung erscheinen auf der Website (z. B. «Plissee-Tür St. Gallen»).</li>
       </ul>
       <div class="queue" id="queue"></div>
       <div style="margin-top:14px;display:flex;gap:10px;align-items:center" id="queueActions" hidden>
-        <button class="btn" id="uploadBtn">Objavi na stranici</button>
-        <button class="btn ghost" id="clearBtn">Očisti listu</button>
+        <button class="btn" id="uploadBtn">Auf Website veröffentlichen</button>
+        <button class="btn ghost" id="clearBtn">Liste leeren</button>
       </div>
     </section>
 
     <section class="card" data-admin-panel="projects" hidden>
-      <h2>Objavljeni projekti</h2>
-      <p class="muted" style="margin-top:-8px">Ovi projekti se prikazuju na vrhu sekcije „Abgeschlossene Projekte“, prije postojećih. Redoslijed mijenjaš strelicama.</p>
+      <h2>Veröffentlichte Projekte</h2>
+      <p class="muted" style="margin-top:-8px">Neue Projekte erscheinen oben im Bereich «Abgeschlossene Projekte». Die Reihenfolge lässt sich mit den Pfeilen ändern.</p>
       <div class="tabs">
-        <button class="active" data-filter="image">Slike <span id="cntImage"></span></button>
+        <button class="active" data-filter="image">Bilder <span id="cntImage"></span></button>
         <button data-filter="video">Video <span id="cntVideo"></span></button>
       </div>
       <div class="items" id="items"></div>
@@ -221,8 +221,8 @@ input::placeholder{color:#a3aba5}
     const res = await fetch("/api/admin/" + path, { method: opts.method || "GET", headers, body: opts.body });
     let data = {};
     try { data = await res.json(); } catch {}
-    if (res.status === 401 && path !== "login"){ logout(); throw new Error("Sesija je istekla, prijavi se ponovo."); }
-    if (!res.ok) throw new Error(data.error || ("Greška " + res.status));
+    if (res.status === 401 && path !== "login"){ logout(); throw new Error("Ihre Sitzung ist abgelaufen. Bitte erneut anmelden."); }
+    if (!res.ok) throw new Error(data.error || ("Fehler " + res.status));
     return data;
   }
   function el(tag, attrs = {}, ...kids){
@@ -249,7 +249,7 @@ input::placeholder{color:#a3aba5}
       const { token: t } = await api("login", { method: "POST", json: { password: $("#pw").value } });
       token = t; try { sessionStorage.setItem("gttAdminToken", t); } catch {}
       $("#pw").value = ""; showApp();
-    } catch (err){ $("#loginErr").textContent = err.message === "Falsches Passwort" ? "Pogrešna lozinka." : err.message; }
+    } catch (err){ $("#loginErr").textContent = err.message === "Falsches Passwort" ? "Falsches Passwort." : err.message; }
   });
   $("#logoutBtn").addEventListener("click", logout);
 
@@ -259,7 +259,7 @@ input::placeholder{color:#a3aba5}
       const url = URL.createObjectURL(file);
       const img = new Image();
       img.onload = () => resolve({ img, url });
-      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Ovaj format slike browser ne može otvoriti (npr. HEIC). Sačuvaj kao JPG pa pokušaj ponovo.")); };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Dieses Bildformat wird nicht unterstützt (z. B. HEIC). Bitte als JPG speichern und erneut versuchen.")); };
       img.src = url;
     });
   }
@@ -278,7 +278,7 @@ input::placeholder{color:#a3aba5}
       if (blob && blob.size <= maxBytes) return blob;
       side = Math.round(side * 0.8); q = Math.max(0.6, q - 0.07);
     }
-    throw new Error("Slika je prevelika.");
+    throw new Error("Das Bild ist zu gross.");
   }
   async function prepareImage(file){
     const { img, url } = await loadImage(file);
@@ -332,14 +332,14 @@ input::placeholder{color:#a3aba5}
     for (const file of files){
       const isVideo = file.type.startsWith("video/") || /\.(mov|mp4|webm)$/i.test(file.name);
       const isImage = file.type.startsWith("image/") || /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name);
-      if (!isVideo && !isImage){ toast("Nepodržan fajl: " + file.name); continue; }
-      if (isVideo && file.size > MAX_VIDEO){ toast("Video je veći od 500 MB: " + file.name); continue; }
+      if (!isVideo && !isImage){ toast("Nicht unterstützte Datei: " + file.name); continue; }
+      if (isVideo && file.size > MAX_VIDEO){ toast("Das Video überschreitet 500 MB: " + file.name); continue; }
       const entry = { file, type: isVideo ? "video" : "image", state: "waiting" };
       const thumb = isVideo ? el("video", { class: "thumb", muted: true, playsinline: true, preload: "metadata" })
                             : el("img", { class: "thumb", alt: "" });
       thumb.src = URL.createObjectURL(file) + (isVideo ? "#t=1" : "");
-      entry.title = el("input", { placeholder: isVideo ? "Naslov (npr. Plissee-Tür Montage)" : "Naslov (npr. Fenster Spannrahmen)", value: isVideo ? "GTT Video" : "GTT Montage", maxlength: "120" });
-      entry.subtitle = el("input", { placeholder: "Opis (npr. St. Gallen · 2026)", value: isVideo ? "Reale Montage · Video" : "Abgeschlossenes Projekt", maxlength: "200" });
+      entry.title = el("input", { placeholder: isVideo ? "Titel (z. B. Plissee-Tür Montage)" : "Titel (z. B. Fenster Spannrahmen)", value: isVideo ? "GTT Video" : "GTT Montage", maxlength: "120" });
+      entry.subtitle = el("input", { placeholder: "Beschreibung (z. B. St. Gallen · 2026)", value: isVideo ? "Reale Montage · Video" : "Abgeschlossenes Projekt", maxlength: "200" });
       entry.bar = el("i"); entry.status = el("div", { class: "status" }, `${isVideo ? "Video" : "Slika"} · ${file.name} · ${fmtSize(file.size)}`);
       entry.node = el("div", { class: "q" }, thumb, el("div", {}, entry.title, entry.subtitle, el("div", { class: "bar" }, entry.bar), entry.status));
       queue.push(entry); $("#queue").append(entry.node);
@@ -353,25 +353,25 @@ input::placeholder{color:#a3aba5}
       entry.state = "busy";
       let fileId, posterId;
       if (entry.type === "image"){
-        setStatus("Optimizujem sliku…");
+        setStatus("Bild wird optimiert…");
         const blob = await prepareImage(entry.file);
-        setStatus(`Šaljem (${fmtSize(blob.size)})…`);
+        setStatus(`Wird hochgeladen (${fmtSize(blob.size)})…`);
         fileId = await uploadBlob(blob, blob.type, p => entry.bar.style.width = (p * 100).toFixed(0) + "%");
       } else {
-        setStatus("Pravim sliku za pregled…");
+        setStatus("Vorschaubild wird erstellt…");
         const poster = await videoPoster(entry.file);
         if (poster) posterId = await uploadBlob(poster, poster.type);
         const ct = entry.file.type || (/\.mov$/i.test(entry.file.name) ? "video/quicktime" : "video/mp4");
-        setStatus(`Šaljem video (${fmtSize(entry.file.size)})…`);
+        setStatus(`Video wird hochgeladen (${fmtSize(entry.file.size)})…`);
         fileId = await uploadBlob(entry.file, ct, p => {
           entry.bar.style.width = (p * 100).toFixed(0) + "%";
-          entry.status.textContent = `Šaljem video… ${(p * 100).toFixed(0)}%`;
+          entry.status.textContent = `Video wird hochgeladen… ${(p * 100).toFixed(0)}%`;
         });
       }
       await api("items", { method: "POST", json: { type: entry.type, title: entry.title.value, subtitle: entry.subtitle.value, file: fileId, poster: posterId } });
-      entry.bar.style.width = "100%"; entry.state = "done"; setStatus("✓ Objavljeno", "ok");
+      entry.bar.style.width = "100%"; entry.state = "done"; setStatus("✓ Veröffentlicht", "ok");
     } catch (err){
-      entry.state = "error"; setStatus("Greška: " + err.message, "bad");
+      entry.state = "error"; setStatus("Fehler: " + err.message, "bad");
     }
   }
 
@@ -381,7 +381,7 @@ input::placeholder{color:#a3aba5}
     btn.disabled = false; $("#clearBtn").disabled = false;
     await loadItems();
     const failed = queue.filter(e => e.state === "error").length;
-    toast(failed ? `${failed} fajl(ova) nije uspjelo – pokušaj ponovo` : "Sve je objavljeno ✓");
+    toast(failed ? `${failed} Datei(en) fehlgeschlagen – bitte erneut versuchen` : "Alles veröffentlicht ✓");
   });
   $("#clearBtn").addEventListener("click", () => {
     for (let i = queue.length - 1; i >= 0; i--) if (queue[i].state !== "busy"){ queue[i].node.remove(); queue.splice(i, 1); }
@@ -409,14 +409,14 @@ input::placeholder{color:#a3aba5}
     if (!target) return;
     const a = items.indexOf(item), b = items.indexOf(target);
     [items[a], items[b]] = [items[b], items[a]];
-    render(); saveOrder().then(() => toast("Redoslijed sačuvan")).catch(err => toast(err.message));
+    render(); saveOrder().then(() => toast("Reihenfolge gespeichert")).catch(err => toast(err.message));
   }
   function render(){
     $("#cntImage").textContent = "(" + items.filter(i => i.type === "image").length + ")";
     $("#cntVideo").textContent = "(" + items.filter(i => i.type === "video").length + ")";
     const list = items.filter(i => i.type === filter);
     const box = $("#items"); box.innerHTML = "";
-    if (!list.length){ box.append(el("div", { class: "empty" }, filter === "image" ? "Još nema dodanih slika." : "Još nema dodanih videa.")); return; }
+    if (!list.length){ box.append(el("div", { class: "empty" }, filter === "image" ? "Noch keine Bilder vorhanden." : "Noch keine Videos vorhanden.")); return; }
     list.forEach((it, idx) => {
       const media = it.type === "video"
         ? el("video", { src: "/media/" + it.file, poster: it.poster ? "/media/" + it.poster : false, muted: true, playsinline: true, preload: "none", controls: true })
@@ -424,25 +424,25 @@ input::placeholder{color:#a3aba5}
       const title = el("input", { value: it.title, maxlength: "120" });
       const sub = el("input", { value: it.subtitle, maxlength: "200" });
       const save = async () => {
-        try { await api("items/" + it.id, { method: "PATCH", json: { title: title.value, subtitle: sub.value } }); it.title = title.value; it.subtitle = sub.value; toast("Sačuvano"); }
+        try { await api("items/" + it.id, { method: "PATCH", json: { title: title.value, subtitle: sub.value } }); it.title = title.value; it.subtitle = sub.value; toast("Gespeichert"); }
         catch (err){ toast(err.message); }
       };
       title.addEventListener("change", save); sub.addEventListener("change", save);
       const vis = el("button", { class: "btn ghost small", onclick: async () => {
-        try { await api("items/" + it.id, { method: "PATCH", json: { visible: !it.visible } }); it.visible = !it.visible; render(); toast(it.visible ? "Prikazano na stranici" : "Sakriveno sa stranice"); }
+        try { await api("items/" + it.id, { method: "PATCH", json: { visible: !it.visible } }); it.visible = !it.visible; render(); toast(it.visible ? "Auf der Website sichtbar" : "Auf der Website ausgeblendet"); }
         catch (err){ toast(err.message); }
-      }}, it.visible ? "👁 Sakrij" : "👁 Prikaži");
+      }}, it.visible ? "👁 Ausblenden" : "👁 Einblenden");
       const del = el("button", { class: "btn danger small", onclick: async () => {
-        if (!confirm("Obrisati ovaj projekat? Ovo se ne može vratiti.")) return;
-        try { await api("items/" + it.id, { method: "DELETE" }); items = items.filter(x => x !== it); render(); toast("Obrisano"); }
+        if (!confirm("Dieses Projekt unwiderruflich löschen?")) return;
+        try { await api("items/" + it.id, { method: "DELETE" }); items = items.filter(x => x !== it); render(); toast("Gelöscht"); }
         catch (err){ toast(err.message); }
-      }}, "Obriši");
+      }}, "Löschen");
       box.append(el("div", { class: "item" + (it.visible ? "" : " hidden-item") },
         el("div", { class: "media" }, media, el("span", { class: "tag" }, it.visible ? `#${idx + 1}` : "Sakriveno")),
         el("div", { class: "body" }, title, sub,
           el("div", { class: "row" },
-            el("button", { class: "btn ghost small", title: "Pomjeri naprijed", disabled: idx === 0, onclick: () => move(it, -1) }, "←"),
-            el("button", { class: "btn ghost small", title: "Pomjeri nazad", disabled: idx === list.length - 1, onclick: () => move(it, 1) }, "→"),
+            el("button", { class: "btn ghost small", title: "Nach oben verschieben", disabled: idx === 0, onclick: () => move(it, -1) }, "←"),
+            el("button", { class: "btn ghost small", title: "Nach unten verschieben", disabled: idx === list.length - 1, onclick: () => move(it, 1) }, "→"),
             el("span", { class: "spacer" }), vis, del))));
     });
   }
@@ -474,20 +474,20 @@ input::placeholder{color:#a3aba5}
     const o = readOfferForm();
     const p = Math.min(50, Math.max(0, Math.round(o.percent) || 0));
     const name = o.name || "Herbst-/Winteraktion";
-    of("ofActiveLabel").textContent = o.active ? "Ponuda uključena" : "Ponuda isključena";
+    of("ofActiveLabel").textContent = o.active ? "Aktion aktiviert" : "Aktion deaktiviert";
     let state;
-    if (!o.active) state = ["off", "Isključeno – na stranici se ne prikazuje"];
-    else if (o.validFrom && offerToday < o.validFrom) state = ["wait", "Zakazano – počinje " + fmtDate(o.validFrom)];
-    else if (o.validUntil && offerToday > o.validUntil) state = ["off", "Isteklo " + fmtDate(o.validUntil)];
-    else state = ["on", "Aktivno na stranici" + (o.validUntil ? " do " + fmtDate(o.validUntil) : "")];
+    if (!o.active) state = ["off", "Deaktiviert – auf der Website ausgeblendet"];
+    else if (o.validFrom && offerToday < o.validFrom) state = ["wait", "Geplant – beginnt am " + fmtDate(o.validFrom)];
+    else if (o.validUntil && offerToday > o.validUntil) state = ["off", "Abgelaufen am " + fmtDate(o.validUntil)];
+    else state = ["on", "Auf der Website aktiv" + (o.validUntil ? " bis " + fmtDate(o.validUntil) : "")];
     const line = (label, key) => {
-      if (!o[key]) return `${label}: ${chf(BASE[key])} / m² (bez popusta)`;
+      if (!o[key]) return `${label}: ${chf(BASE[key])} / m² (ohne Rabatt)`;
       return `${label}: <s>${chf(BASE[key])}</s> → <b>${chf(Math.round(BASE[key] * (1 - p / 100)))} / m²</b>`;
     };
     of("ofPreview").innerHTML =
-      `<div><span style="font-weight:600">Pregled:</span> <span class="offer-state ${state[0]}">${state[1]}</span></div>` +
+      `<div><span style="font-weight:600">Vorschau:</span> <span class="offer-state ${state[0]}">${state[1]}</span></div>` +
       `<div>${line("Fenster", "fenster")}</div><div>${line("Türen / Plissee", "tueren")}</div>` +
-      `<div class="muted">Obavijest: „${(o.text || `${name}: ${p}% Rabatt ${o.fenster && o.tueren ? "auf Fenster und Türen" : o.fenster ? "auf Fenster" : "auf Türen / Plissee"}${o.validUntil ? " – gültig bis " + fmtDate(o.validUntil) : ""}`).replace(/</g, "&lt;")}“</div>`;
+      `<div class="muted">Hinweis: „${(o.text || `${name}: ${p}% Rabatt ${o.fenster && o.tueren ? "auf Fenster und Türen" : o.fenster ? "auf Fenster" : "auf Türen / Plissee"}${o.validUntil ? " – gültig bis " + fmtDate(o.validUntil) : ""}`).replace(/</g, "&lt;")}“</div>`;
   }
   function fillOfferForm(o){
     of("ofActive").checked = !!o.active;
@@ -508,13 +508,13 @@ input::placeholder{color:#a3aba5}
   of("offerForm").addEventListener("change", renderOfferPreview);
   of("offerForm").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const st = of("ofStatus"); st.className = "status"; st.textContent = "Čuvam…";
+    const st = of("ofStatus"); st.className = "status"; st.textContent = "Wird gespeichert…";
     of("ofSave").disabled = true;
     try {
       const d = await api("offer", { method: "PUT", json: readOfferForm() });
       fillOfferForm(d.offer);
       st.className = "status ok";
-      st.textContent = d.current ? "✓ Sačuvano – ponuda je aktivna na stranici" : "✓ Sačuvano – trenutno se ne prikazuje na stranici";
+      st.textContent = d.current ? "✓ Gespeichert – Aktion auf der Website aktiv" : "✓ Gespeichert – derzeit auf der Website ausgeblendet";
     } catch (err){ st.className = "status bad"; st.textContent = err.message; }
     of("ofSave").disabled = false;
   });

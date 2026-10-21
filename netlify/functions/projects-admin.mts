@@ -3,6 +3,7 @@ import { recordsAPI } from "../lib/records-api.mts";
 import { recordsDB } from "../lib/records-db.mts";
 import { RecordError } from "../lib/records.mts";
 import { importApprovedHistory } from "../lib/approved-history.mts";
+import {recordMessageDE} from '../lib/record-messages-de.mts';
 import {
   CHUNK_SIZE,
   FILE_ID_RE,
@@ -88,9 +89,9 @@ export default async (req: Request, context: Context) => {
       if(method==='GET'&&parts.length===1)await importApprovedHistory(db,context);
       return await recordsAPI(req, db, parts.slice(1));
     } catch (err) {
-      if (err instanceof RecordError) return json({ error: err.message }, err.status, { "Cache-Control": "no-store" });
+      if (err instanceof RecordError) return json({ error: recordMessageDE(err.message) }, err.status, { "Cache-Control": "no-store" });
       console.error("Admin records operation failed");
-      return json({ error: "Evidencija trenutno nije dostupna. Proveri vezu sa bazom i pokušaj ponovo." }, 503, { "Cache-Control": "no-store" });
+      return json({ error: "Die Anfragen sind derzeit nicht verfügbar. Bitte die Verbindung prüfen und erneut versuchen." }, 503, { "Cache-Control": "no-store" });
     }
   }
 
