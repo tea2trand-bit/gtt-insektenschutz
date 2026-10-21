@@ -2,7 +2,7 @@ import type { Config, Context } from "@netlify/functions";
 import { verifyRequest, DEFAULT_OFFER, json } from "../lib/projects-store.mts";
 import { recordsDB } from "../lib/records-db.mts";
 import { createRecord, fromSubmission } from "../lib/records.mts";
-import { prepareQuoteIntake, processQuoteIntake } from "../lib/quote-intake.mts";
+import { prepareQuoteIntake, processQuoteIntake, deploymentContext } from "../lib/quote-intake.mts";
 import { renderQuoteEmail } from "../lib/quote-email.mts";
 import { MEASUREMENT_MODEL } from "../lib/measurement-ai.mts";
 
@@ -24,7 +24,7 @@ export default async (req:Request,context:Context)=>{
   for(const key of ["record_source","form-name","nachricht","plz","fensterflaeche_m2","tuerflaeche_m2","name","email","telefon","firma","adresse"]) if(typeof body?.data?.[key]==="string")data[key]=body.data[key].slice(0,6000);
   if(!["angebot","kontakt","b2b-anfrage"].includes(data.record_source||data["form-name"]))return json({error:"Izaberi izvor upita."},400);
   if(body.operation==="fixture"){
-    if(context.deploy?.context==="production")return json({error:"Sintetički upis je dostupan samo u previewju."},404);
+    if(!["deploy-preview","branch-deploy","dev","local"].includes(deploymentContext(context)))return json({error:"Sintetički upis je dostupan samo u previewju."},404);
     const key=typeof body.fixtureKey==="string" && /^[a-z0-9-]{1,60}$/.test(body.fixtureKey)?body.fixtureKey:null;
     if(!key)return json({error:"Potreban je stabilan fixtureKey."},400);
     Object.assign(data,{inquiry_id:"quote-fixture-"+key,name:"TEST – Demo upit",email:"test@example.invalid",telefon:"+41 00 000 00 00"});

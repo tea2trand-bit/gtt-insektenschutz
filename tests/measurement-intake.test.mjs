@@ -81,6 +81,8 @@ test('AI request uses structured schema and redacts supplied contact details; fa
   const contacts={name:'Private Name',email:'private@example.test',telefon:'+41 76 111 22 33'};
   const raw='Private Name private@example.test +41 76 111 22 33\n2 Fenster, Breite 120 cm, Höhe 140 cm';
   const safe=redactMeasurementText(raw,contacts);assert.doesNotMatch(safe,/Private Name|private@example|111 22/);
+  const minimal=redactMeasurementText('Hallo, ich bin Max. Ich benötige 2 Fenster, Breite 120 cm, Höhe 140 cm. Grüsse Max Müller.');
+  assert.equal(minimal,'2 Fenster, Breite 120 cm, Höhe 140 cm');
   let params;
   const client={responses:{create:async p=>{params=p;return {id:'local-mock-only',status:'completed',output_text:JSON.stringify({measurements:[{type:'window',quantity:2,width:120,height:140,widthUnit:'cm',heightUnit:'cm',source:'2 Fenster, Breite 120 cm, Höhe 140 cm'}]})};}}};
   const result=await refineMeasurements(raw,contacts,parseMeasurements(raw,'9000'),{client});
