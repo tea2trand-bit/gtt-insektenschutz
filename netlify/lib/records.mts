@@ -26,7 +26,7 @@ export function fromSubmission(data: Record<string, unknown>, meta: {id?: string
   const form = text(meta.form || data.record_source || data["form-name"]);
   const sources: Record<string, string> = { angebot: "Kalkulator", "angebot-netlify-fallback": "Kalkulator", "b2b-anfrage": "B2B", kontakt: "Kontakt", manual: "Ručni unos" };
   if (!sources[form]) return null;
-  const raw = Object.fromEntries(Object.entries(data).filter(([k]) => !["bot-field", "ip", "user_agent"].includes(k)).map(([k,v]) => [k, text(v)]));
+  const raw = Object.fromEntries(Object.entries(data).filter(([k]) => !["bot-field", "ip", "user_agent"].includes(k)).map(([k,v]) => [k, typeof v==='string'?v:""]));
   const inquiryId = text(data.inquiry_id, 100);
   // New forms carry an ID through transport retries. Historical imports use the
   // actual Netlify submission ID; no customer/email matching can merge jobs.
@@ -60,6 +60,9 @@ export function applyChange(current: any, body: any, today = new Date().toLocale
     d.status=body.status;
     d.decisionDate=today;
     if(body.reason!==undefined)d.decisionReason=text(body.reason,2000);
+    if(body.status==='Odbijeno'&&d.appointmentAt&&d.appointmentStatus!=='cancelled'){
+      d.appointmentStatus='cancelled';d.appointmentCancelledAt=new Date().toISOString();d.appointmentCancelReason='Posao je odbijen';
+    }
   } else if (kind === "appointment") {
     if(!['Prihvaćeno','Montaža'].includes(d.status))throw new RecordError("Prvo zabeleži da je posao dogovoren.");
     const at=date(body.date),time=text(body.time,5);
