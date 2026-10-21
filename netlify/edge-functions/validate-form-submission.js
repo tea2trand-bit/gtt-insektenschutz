@@ -2,7 +2,7 @@ const FORM_RULES = {
   angebot: { emailRequired: true },
   'angebot-netlify-fallback': { emailRequired: true },
   kontakt: { emailRequired: true },
-  'b2b-anfrage': { emailRequired: false },
+  'b2b-anfrage': { emailRequired: true },
 };
 
 function clean(value, maxLength) {
@@ -20,6 +20,7 @@ export function validateSubmission(values) {
   const name = clean(values.name, 100).replace(/\s+/g, ' ');
   const phone = clean(values.telefon, 30);
   const email = clean(values.email, 160);
+  const address = clean(values.adresse, 500);
   const nameParts = name.split(' ').filter(Boolean);
   const phoneDigits = phone.replace(/\D/g, '');
   const errors = {};
@@ -39,6 +40,8 @@ export function validateSubmission(values) {
   if ((rules.emailRequired || email) && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     errors.email = 'Eine gültige E-Mail-Adresse ist erforderlich.';
   }
+  if(address.length<5)errors.adresse='Die Montageadresse ist erforderlich.';
+  if(!/^[1-9]\d{3}$/.test(String(values.plz||'').trim()))errors.plz='Eine vierstellige Schweizer PLZ ist erforderlich.';
 
   return { protectedForm: true, errors };
 }
@@ -83,6 +86,8 @@ export default async function validateFormSubmission(request) {
     name: field(formData, 'name'),
     telefon: field(formData, 'telefon'),
     email: field(formData, 'email'),
+    adresse: field(formData, 'adresse'),
+    plz: field(formData, 'plz'),
   });
 
   if (Object.keys(validation.errors).length === 0) return;
@@ -90,7 +95,7 @@ export default async function validateFormSubmission(request) {
   return new Response(
     JSON.stringify({
       ok: false,
-      message: 'Bitte füllen Sie Vor- und Nachname sowie Telefonnummer korrekt aus.',
+      message: 'Bitte Name, E-Mail, Telefonnummer, Montageadresse und PLZ vollständig und korrekt ausfüllen.',
       fields: Object.keys(validation.errors),
     }),
     {

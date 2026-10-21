@@ -15,7 +15,7 @@ function request(body) {
 
 test('kontakt requires full name, phone and email', () => {
   const result = validateSubmission({
-    formName: 'kontakt',
+    formName: 'kontakt', adresse: 'Teststrasse 1, St. Gallen', plz: '9000',
     name: '',
     telefon: '',
     email: '',
@@ -27,7 +27,7 @@ test('kontakt requires full name, phone and email', () => {
 
 test('a one-word name is rejected', () => {
   const result = validateSubmission({
-    formName: 'kontakt',
+    formName: 'kontakt', adresse: 'Teststrasse 1, St. Gallen', plz: '9000',
     name: 'Monika',
     telefon: '+41 78 123 45 67',
     email: 'monika@example.ch',
@@ -38,7 +38,7 @@ test('a one-word name is rejected', () => {
 
 test('a normal Swiss contact is accepted', () => {
   const result = validateSubmission({
-    formName: 'kontakt',
+    formName: 'kontakt', adresse: 'Teststrasse 1, St. Gallen', plz: '9000',
     name: 'Monika Thürlemann',
     telefon: '+41 (0)78 684 36 63',
     email: 'monika@example.ch',
@@ -47,21 +47,30 @@ test('a normal Swiss contact is accepted', () => {
   assert.deepEqual(result.errors, {});
 });
 
-test('b2b email remains optional while name and phone stay required', () => {
+test('b2b email is required with the complete installation address', () => {
   const result = validateSubmission({
-    formName: 'b2b-anfrage',
+    formName: 'b2b-anfrage', adresse: 'Teststrasse 1, St. Gallen', plz: '9000',
     name: 'Hans Müller',
     telefon: '071 123 45 67',
     email: '',
   });
 
-  assert.deepEqual(result.errors, {});
+  assert.deepEqual(Object.keys(result.errors), ['email']);
+});
+
+test('all inquiry forms reject missing installation address, postcode and email on the server',()=>{
+  for(const formName of ['angebot','angebot-netlify-fallback','kontakt','b2b-anfrage']){
+    const result=validateSubmission({formName,name:'Test Person',telefon:'+41 79 123 45 67',email:'',adresse:'',plz:''});
+    assert.deepEqual(Object.keys(result.errors).sort(),['adresse','email','plz']);
+    const invalid=validateSubmission({formName,name:'Test Person',telefon:'+41 79 123 45 67',email:'test@example.invalid',adresse:'Teststrasse 1',plz:'90000'});
+    assert.deepEqual(Object.keys(invalid.errors),['plz']);
+  }
 });
 
 test('direct incomplete POST is rejected before Netlify Forms', async () => {
   const response = await validateFormSubmission(
     request({
-      'form-name': 'kontakt',
+      'form-name': 'kontakt', adresse: 'Teststrasse 1, St. Gallen', plz: '9000',
       email: 'bot@example.com',
       nachricht: 'Bitte kontaktieren Sie mich.',
     }),
@@ -75,7 +84,7 @@ test('direct incomplete POST is rejected before Netlify Forms', async () => {
 test('legacy fallback form cannot bypass contact validation', async () => {
   const response = await validateFormSubmission(
     request({
-      'form-name': 'angebot-netlify-fallback',
+      'form-name': 'angebot-netlify-fallback', adresse: 'Teststrasse 1, St. Gallen', plz: '9000',
       email: 'bot@example.com',
       nachricht: 'Bitte kontaktieren Sie mich.',
     }),
@@ -89,7 +98,7 @@ test('legacy fallback form cannot bypass contact validation', async () => {
 test('valid POST continues to Netlify Forms', async () => {
   const response = await validateFormSubmission(
     request({
-      'form-name': 'kontakt',
+      'form-name': 'kontakt', adresse: 'Teststrasse 1, St. Gallen', plz: '9000',
       name: 'Anna Meier',
       telefon: '+41 79 123 45 67',
       email: 'anna@example.ch',
@@ -102,7 +111,7 @@ test('valid POST continues to Netlify Forms', async () => {
 test('honeypot submission is silently stopped', async () => {
   const response = await validateFormSubmission(
     request({
-      'form-name': 'kontakt',
+      'form-name': 'kontakt', adresse: 'Teststrasse 1, St. Gallen', plz: '9000',
       'bot-field': 'spam',
       name: 'Fake Person',
       telefon: '+41 79 123 45 67',

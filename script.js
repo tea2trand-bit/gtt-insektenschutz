@@ -462,6 +462,8 @@ document.addEventListener("keydown",(e)=>{if(!lb||!lb.classList.contains("active
     const nameField = form.querySelector('[name="name"]');
     const phoneField = form.querySelector('[name="telefon"]');
     const emailField = form.querySelector('[name="email"]');
+    const addressField = form.querySelector('[name="adresse"]');
+    const postalField = form.querySelector('[name="plz"]');
 
     if(nameField){
       const name = String(nameField.value || '').trim().replace(/\s+/g, ' ');
@@ -485,6 +487,13 @@ document.addEventListener("keydown",(e)=>{if(!lb||!lb.classList.contains("active
 
     if(emailField){
       emailField.value = String(emailField.value || '').trim();
+    }
+    if(addressField)addressField.value=String(addressField.value||'').trim();
+    if(postalField){
+      const valid=/^[1-9]\d{3}$/.test(String(postalField.value||'').trim());
+      const visible=postalField.type==='hidden'?document.getElementById('plz'):postalField;
+      visible?.setCustomValidity(valid?'':'Bitte eine vierstellige Schweizer PLZ eingeben.');
+      if(!valid){visible?.reportValidity();return false;}
     }
 
     return form.checkValidity();

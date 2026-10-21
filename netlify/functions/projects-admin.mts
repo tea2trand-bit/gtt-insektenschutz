@@ -1,5 +1,6 @@
 import type { Config, Context } from "@netlify/functions";
 import { recordsAPI } from "../lib/records-api.mts";
+import { complaintsAdminAPI } from "../lib/complaints.mts";
 import { recordsDB } from "../lib/records-db.mts";
 import { RecordError } from "../lib/records.mts";
 import { importApprovedHistory } from "../lib/approved-history.mts";
@@ -83,11 +84,16 @@ export default async (req: Request, context: Context) => {
   // ---- everything below requires a valid token ------------------------------
   if (!verifyRequest(req)) return json({ error: "Nicht angemeldet" }, 401);
 
+  if(parts[0]==='complaints'){
+    try{return await complaintsAdminAPI(req,recordsDB(),parts.slice(1));}
+    catch{return json({error:'Die Reklamationen sind derzeit nicht verfügbar.'},503,{'Cache-Control':'no-store'});}
+  }
+
   if (parts[0] === "records") {
     try {
       const db=recordsDB();
       if(method==='GET'&&parts.length===1)await importApprovedHistory(db,context);
-      return await recordsAPI(req, db, parts.slice(1));
+      return await recordsAPI(req, db, parts.slice(1),{context});
     } catch (err) {
       if (err instanceof RecordError) return json({ error: recordMessageDE(err.message) }, err.status, { "Cache-Control": "no-store" });
       console.error("Admin records operation failed");

@@ -5,7 +5,7 @@ export type OfferClaims={r:string;q:number;e:number;a:string};
 export const publicBaseURL=()=>env('GTT_PUBLIC_BASE_URL')||'https://gtt-insektenschutz.ch';
 export function createAcceptanceLink(snapshot:any,recordId:string,version:number,baseURL=publicBaseURL()){
  const secret=env('GTT_OFFER_ACCEPTANCE_SECRET');
- if(!secret||snapshot.status!=='priced'||!snapshot.quote||snapshot.manualReview)return null;
+ if(!secret||snapshot.status!=='priced'||!snapshot.quote||snapshot.manualReview||snapshot.email?.status==='draft')return null;
  const expires=Date.parse(snapshot.processedAt)+30*86400000;
  if(!Number.isFinite(expires))return null;
  const origin=new URL(baseURL).origin;

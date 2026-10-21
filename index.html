@@ -232,8 +232,11 @@
         <label>Telefon / WhatsApp *
           <input type="tel" name="telefon" placeholder="+41 ..." autocomplete="tel" inputmode="tel" minlength="7" maxlength="30" required>
         </label>
-        <label>E-Mail
+        <label>E-Mail *
           <input type="email" name="email" placeholder="name@email.ch" required>
+        </label>
+        <label>Montageadresse (Strasse, Hausnummer und Ort) *
+          <input name="adresse" autocomplete="street-address" minlength="5" maxlength="500" placeholder="Musterstrasse 12, St. Gallen" required>
         </label>
 
         <button class="btn" type="submit">UNVERBINDLICHE OFFERTE ERHALTEN →</button>
@@ -540,6 +543,7 @@
       </div>
 
       <p class="contact-response"><strong>✓ Schnelle Rückmeldung</strong><span>In der Regel innerhalb von 24 Stunden.</span></p>
+      <p class="contact-lede">Sie haben bereits einen Auftrag? <a href="reklamation.html">Reklamation melden →</a></p>
     </div>
 
     <div class="contact-card">
@@ -562,6 +566,12 @@
           <label class="contact-field-wide">Telefonnummer *
             <input name="telefon" type="tel" placeholder="+41 ..." autocomplete="tel" inputmode="tel" minlength="7" maxlength="30" required>
           </label>
+          <label class="contact-field-wide">Montageadresse (Strasse, Hausnummer und Ort) *
+            <input name="adresse" autocomplete="street-address" minlength="5" maxlength="500" placeholder="Musterstrasse 12, St. Gallen" required>
+          </label>
+          <label>PLZ des Montageorts *
+            <input name="plz" inputmode="numeric" autocomplete="postal-code" pattern="[1-9][0-9]{3}" maxlength="4" placeholder="9000" required>
+          </label>
           <label class="contact-field-wide">Ihre Nachricht
             <textarea name="nachricht" rows="4" placeholder="Worum geht es bei Ihrem Projekt?"></textarea>
           </label>
@@ -582,6 +592,7 @@
       <span><b>GTT Insektenschutz</b><small>Ein Bereich der GTT Group</small></span>
     </div>
     <div class="footer-links">
+      <a href="reklamation.html">Reklamation melden</a>
       <a href="impressum.html">Impressum</a>
       <a href="datenschutz.html">Datenschutz</a>
       <a href="agb.html">AGB</a>
@@ -652,8 +663,14 @@
         <input type="tel" name="telefon" placeholder="+41 ..." autocomplete="tel" inputmode="tel" minlength="7" maxlength="30" required>
       </label>
 
-      <label>E-Mail
-        <input type="email" name="email" placeholder="name@firma.ch">
+      <label>E-Mail *
+        <input type="email" name="email" placeholder="name@firma.ch" required>
+      </label>
+      <label>Montageadresse (Strasse, Hausnummer und Ort) *
+        <input name="adresse" autocomplete="street-address" minlength="5" maxlength="500" placeholder="Musterstrasse 12, St. Gallen" required>
+      </label>
+      <label>PLZ des Montageorts *
+        <input name="plz" inputmode="numeric" autocomplete="postal-code" pattern="[1-9][0-9]{3}" maxlength="4" placeholder="9000" required>
       </label>
 
       <label>Nachricht
