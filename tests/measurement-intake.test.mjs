@@ -33,6 +33,11 @@ for(const message of [
   '120 x 140 cm',
   '2 Fenster 0 x 140 cm',
   '2 Fenster 120 x 140 cm statt 100 x 100 cm',
+  '2 Fenster 120 x 140 cm, 3 m² Fenster',
+  '2 Fenster 120 x 140 cm, Anzahl 3',
+  '2 Fenster 120 x 140 cm, aber nur eins',
+  '2 Fenster -120 x 140 cm',
+  '2 Fenster 1e3 x 140 cm',
 ])test(`ambiguous inputs do not become a fixed quote: ${message}`,()=>{
   const e=parseMeasurements(message,'9000');assert.ok(e.issues.length);
   assert.equal(priceExtraction(e,'kontakt',offer).quote,null);
@@ -87,5 +92,5 @@ test('professional offer is stable, escaped, itemized, and does not duplicate di
   const e=parseMeasurements('2 Fenster 120 x 140 cm, 1 Tür 90 x 210 cm','9000');const p=priceExtraction(e,'kontakt',offer);
   const s={...p,quote:p.quote,measurements:e.measurements,clarification:[],processedAt:'2026-10-21T01:00:00Z',postalCode:'9000',customer:{name:'TEST <script>alert(1)</script>',email:'test@example.invalid'}};
   const first=renderQuoteEmail(s,'GTT-12345678abcdef',4),again=renderQuoteEmail(s,'GTT-12345678abcdef',4);
-  assert.equal(first.reference,'GTT-12345678-004');assert.deepEqual(first,again);assert.match(first.html,/Einzelpreis/);assert.match(first.html,/Gesamtbetrag/);assert.match(first.html,/bereits in den gerundeten Einheitspreisen berücksichtigt/);assert.match(first.html,/Rundung gemäss Kalkulator/);assert.doesNotMatch(first.html,/<script>|PDF|gültig bis|MwSt/);assert.match(first.html,/&lt;script&gt;/);assert.match(first.html,/@media\(max-width:480px\)/);
+  assert.equal(first.reference,'GTT-12345678-004');assert.deepEqual(first,again);assert.match(first.html,/Einzelpreis/);assert.match(first.html,/Gesamtbetrag/);assert.match(first.html,/bereits in den gerundeten Einheitspreisen berücksichtigt/);assert.match(first.html,/Rundung/);assert.doesNotMatch(first.html,/<script>|PDF|gültig bis|MwSt/);assert.match(first.html,/&lt;script&gt;/);assert.match(first.html,/@media\(max-width:480px\)/);
 });

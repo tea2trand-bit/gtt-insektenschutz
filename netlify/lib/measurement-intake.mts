@@ -56,7 +56,7 @@ export function parseMeasurements(text: string, postalField = ""): Extraction {
   result.special = /\b(sonder\w*|rund\w*|bogen\w*|dreieck\w*|dachfenster|reparatur\w*|reklamation\w*|defekt\w*|nur\s+material|ohne\s+montage)\b/iu.test(source);
   if (/\b(oder|alternativ|vielleicht|ungefähr|ca\.?|circa)\b/iu.test(source)) addIssue(result.issues,"uncertain_dimensions","Bitte bestätigen Sie die endgültigen Masse und Stückzahlen; Ihre Angaben enthalten Alternativen oder ungefähre Werte.");
   const measurementLanguage=source.replace(/\b(?:keine\s+Bestellung|kein\s+Auftrag|nicht\s+anrufen|kein\s+Rückruf|kein\s+Rueckruf)\b/giu," ");
-  if (/\b(nicht|keine?|falsch|statt|sondern|korrigier\w*)\b/iu.test(measurementLanguage)) addIssue(result.issues,"negation_or_correction","Bitte senden Sie die gültigen Masse als eindeutige Liste; Ihre Nachricht enthält eine Verneinung oder Korrektur.");
+  if (/\b(nicht|keine?|falsch|statt|sondern|korrigier\w*)\b|\bnur\s+(?:ein|eine|eins|\d)/iu.test(measurementLanguage)) addIssue(result.issues,"negation_or_correction","Bitte senden Sie die gültigen Masse als eindeutige Liste; Ihre Nachricht enthält eine Verneinung oder Korrektur.");
 
   const atoms = [
     ...[...source.matchAll(pair)].map(m=>({m,mode:"dimensions" as const})),
@@ -109,12 +109,13 @@ export function parseMeasurements(text: string, postalField = ""): Extraction {
       if (!(width>0 && height>0)) addIssue(result.issues,"invalid_dimensions","Breite und Höhe müssen grösser als null sein.");
       const areaM2=widthUnit && heightUnit ? roundArea(width*factor[widthUnit]*height*factor[heightUnit]*quantity) : 0;
       if (widthUnit && heightUnit && (width*factor[widthUnit]>10 || height*factor[heightUnit]>10)) addIssue(result.issues,"unusual_dimensions","Bitte prüfen Sie die ungewöhnlich grossen Masse und deren Einheiten; unser Team klärt die Sonderanfertigung.");
+      if(!Number.isFinite(areaM2) || areaM2>10000)addIssue(result.issues,"unusual_area","Bitte prüfen Sie die sehr grosse Fläche und die Einheiten; unser Team klärt den Projektumfang.");
       if (type) result.measurements.push({type,quantity,width,height,widthUnit,heightUnit,areaM2,mode,source:source.slice(previousEnd,end).trim()});
     } else {
       const value=toNumber(m[1]) * (/^mm/i.test(m[2]) ? 1e-6 : /^cm/i.test(m[2]) ? 1e-4 : 1);
       const perPiece=/\b(je|jeweils|pro\s+(?:stück|element|fenster|tür))\b/iu.test(prefix);
       if (explicitCount !== null && quantity>1 && !perPiece) addIssue(result.issues,"area_quantity_ambiguous","Ist die Fläche pro Stück oder insgesamt gemeint? Bitte bestätigen Sie die Gesamtfläche je Elementtyp.");
-      if (!(value>0)) addIssue(result.issues,"invalid_area","Die Fläche muss grösser als null sein.");
+      if (!(value>0) || !Number.isFinite(value) || value>10000) addIssue(result.issues,"invalid_area","Bitte bestätigen Sie eine positive, plausible Fläche und die Einheit.");
       if (type) result.measurements.push({type,quantity:perPiece?quantity:1,width:null,height:null,widthUnit:null,heightUnit:null,areaM2:roundArea(value*(perPiece?quantity:1)),mode,source:source.slice(previousEnd,end+(afterMatch?.[0].length||0)).trim()});
     }
     inheritedType=type;
@@ -124,6 +125,13 @@ export function parseMeasurements(text: string, postalField = ""): Extraction {
   // Unparsed dimension/unit claims must not silently disappear from a quote.
   const removed = atoms.reduceRight((s,a)=>s.slice(0,a.m.index!)+" ".repeat(a.m[0].length)+s.slice(a.m.index!+a.m[0].length),source);
   if (new RegExp(String.raw`${number}\s*(?:mm|cm|m|m²|m2)\b`,"iu").test(removed)) addIssue(result.issues,"unparsed_measurements","Ein Mass konnte nicht eindeutig zugeordnet werden. Bitte nennen Sie pro Element Stückzahl, Breite und Höhe mit Einheit.");
+  for(const type of ["window","door"] as const){
+    const measures=result.measurements.filter(m=>m.type===type);
+    if(measures.some(m=>m.mode==="dimensions") && measures.some(m=>m.mode==="area" && !/\b(zusätzlich|zusaetzlich|weitere|zusatz)\b/iu.test(m.source)))addIssue(result.issues,"mixed_area_dimension_claims","Für denselben Elementtyp sind Einzelmasse und eine weitere Fläche angegeben. Ist diese Fläche zusätzlich oder bereits in den Einzelmassen enthalten?");
+  }
+  const countClaims=[...source.matchAll(/\b(?:Anzahl|Stückzahl|Stueckzahl)\s*:?\s*(\d+)\b/giu)].map(m=>Number(m[1]));
+  const knownCount=result.measurements.filter(m=>m.mode==="dimensions").reduce((n,m)=>n+m.quantity,0);
+  if(countClaims.some(n=>n!==knownCount))addIssue(result.issues,"conflicting_quantity","Die ausdrücklich genannte Gesamtstückzahl passt nicht zu den Einzelangaben. Bitte bestätigen Sie die Stückzahlen je Mass.");
   return result;
 }
 
