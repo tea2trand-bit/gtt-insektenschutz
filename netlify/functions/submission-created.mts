@@ -39,6 +39,13 @@ function escapeHtml(value: string): string {
 }
 
 export default async (req: Request, _context: Context) => {
+  const deployContext = _context?.deploy?.context || process.env.CONTEXT;
+  if (deployContext && deployContext !== "production") {
+    return new Response("Preview: customer email is not sent.");
+  }
+  if (process.env.GTT_QUOTE_AUTOMATION === "enabled") {
+    return new Response("Customer email is owned by quote intake.");
+  }
   let payload: FormPayload | undefined;
   try {
     ({ payload } = (await req.json()) as { payload: FormPayload });
