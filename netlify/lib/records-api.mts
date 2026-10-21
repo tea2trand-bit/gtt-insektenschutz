@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { RecordError, amount, createRecord, fromSubmission, readRecord, changeRecord, type QueryDB } from "./records.mts";
+import {renderQuoteEmail} from './quote-email.mts';
 const reply = (data:unknown,status=200) => Response.json(data,{status,headers:{"Cache-Control":"no-store", "X-Content-Type-Options":"nosniff"}});
 export async function recordsAPI(req: Request, db: QueryDB, path: string[]) {
   const id = path[0];
@@ -54,6 +55,14 @@ export async function recordsAPI(req: Request, db: QueryDB, path: string[]) {
     return reply({created,duplicates:inputs.length-created});
   }
   if (!/^GTT-[a-f0-9]{24}$/.test(id || "")) throw new RecordError("Neispravan ID kartona.");
+  if(path[1]==='offer'&&path.length===2&&method==='GET'){
+    const record=await readRecord(db,id);
+    const version=record.document.intake?.version;
+    if(!version)throw new RecordError("Automatska ponuda još nije pripremljena.",404);
+    const {rows}=await db.query('SELECT version,snapshot FROM gtt_quote_versions WHERE record_id=$1 AND version=$2',[id,version]);
+    if(!rows[0])throw new RecordError("Verzija ponude nije pronađena.",404);
+    return reply(renderQuoteEmail(rows[0].snapshot,id,Number(rows[0].version)));
+  }
   if (path[1] === "files") {
     await readRecord(db,id);
     if (path[2] && method === "GET") {

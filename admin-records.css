@@ -6,3 +6,4 @@
 #recordsRoot{scroll-margin-top:86px}
 .record-request-summary,.record-appointment{border:1px solid var(--line);background:#fafcf8;border-radius:12px;padding:14px;margin:16px 0}.record-request-summary p{font-size:14px;line-height:1.6;white-space:pre-wrap;margin:8px 0 0}.record-request-summary strong{font-size:13px;color:var(--muted)}
 .record-quote-lines{display:grid;gap:10px;margin:15px 0}.record-quote-lines>div{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding:8px 0}.record-offer-dialog{border:1px solid var(--line);border-radius:14px;padding:16px;width:min(850px,95vw);max-height:95vh}.record-offer-dialog::backdrop{background:rgba(30,45,30,.4)}
+.records{overflow-wrap:anywhere}.record-fields>label{min-width:0}.record-fields input,.record-fields textarea,.record-fields select{width:100%;min-width:0}

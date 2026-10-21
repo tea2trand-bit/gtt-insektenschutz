@@ -18,6 +18,10 @@ Raniji Netlify zapisi mogu se uvesti u adminu kao JSON niz sa `id`, `form_name`,
 
 „Zakaži termin montaže“ je dostupan uz dogovoren posao. Administrator bira lokalni datum/vreme (Europe/Zurich) i neobaveznu napomenu; kupac i adresa dolaze iz kartona. Pregled Montaže prikazuje predstojeće aktivne termine sa vezom do kartona. Promena i otkazivanje su nove verzije istorije; ovo ne šalje kalendarske pozive ili poruke.
 
+Automatska obrada iz istog potpisanog Netlify događaja poziva `processQuoteIntake` posle idempotentnog otvaranja kartona, uključujući ponovljenu dostavu događaja. Mere i ponuda dobijaju nepromenljivu verziju; izlazni email ima jedinstvenu rezervaciju i idempotency key. Originalni tekst ostaje sačuvan. AI služi samo za izdvajanje tehničkih mera; cenovnik, popust i zaokruživanje ostaju u istom determinističkom obračunu kao postojeći kalkulator. Nejasni slučajevi traže dopunu umesto izmišljene cene.
+
+Odobreni istorijski uvoz koristi privatni manifest u Netlify Blobs, čiji je SHA256 unapred pinovan u production runtime konfiguraciji. Potpisani production događaj dodaje samo tri označena TEST kartona i stavlja ostalih jedanaest na privatni spisak za pregled; svako ponavljanje prepoznaje iste ID-eve. Potvrda je u `gtt_admin_import_jobs`, a lični podaci nikad ne ulaze u repozitorijum ili statički build. Uvoz ne pokreće slanje starih ponuda.
+
 ## Lokalni pregled
 
 Node >=22.12 (preporučeno24), `npm ci`, `npm run preview:admin`. Adresa: `http://127.0.0.1:4400/admin`, lokalna lozinka `gtt-demo-local`. PGlite izvršava pravi Postgres SQL i čuva podatke u `.local-records/db`. Ovaj folder je ignorisan u Gitu i ne ulazi u build. Operativni demo kartoni su označeni TEST. Poseban privatni istorijski spisak sadrži podatke korisnika koji čekaju pregled; ne koristiti ih za demonstracije. Postojeća galerija/akcija u ovom lokalnom pregledu su izolovani primeri; evidencija koristi stvarnu lokalnu bazu.

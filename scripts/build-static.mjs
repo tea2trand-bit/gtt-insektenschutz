@@ -1,6 +1,8 @@
-import {mkdir,copyFile,cp,readdir,writeFile} from 'node:fs/promises';
+import {mkdir,copyFile,cp,readdir,writeFile,rm} from 'node:fs/promises';
 import path from 'node:path';
 const root=path.resolve(import.meta.dirname,'..'),out=path.join(root,'dist');
+if(path.relative(root,out)!=='dist')throw Error('Publish directory must stay inside this project');
+await rm(out,{recursive:true,force:true});
 await mkdir(out,{recursive:true});
 // Explicit allowlist: server code, local data, tools and tests never publish.
 for(const item of await readdir(root,{withFileTypes:true})){

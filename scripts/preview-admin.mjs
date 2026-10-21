@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { readFile, mkdir } from 'node:fs/promises';
+import { readFile, mkdir, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { recordsAPI } from '../netlify/lib/records-api.mts';
@@ -11,10 +11,14 @@ import { validateSubmission } from '../netlify/edge-functions/validate-form-subm
 const root=path.resolve(import.meta.dirname,'..');
 await mkdir(path.join(root,'.local-records'),{recursive:true});
 const db=await PGlite.create({dataDir:path.join(root,'.local-records/db')});
-const exists=await db.query("SELECT to_regclass('public.gtt_records') AS name");
-if(!exists.rows[0].name) await db.exec(await readFile(path.join(root,'netlify/database/migrations/20261021010000_admin_records.sql'),'utf8'));
-const pendingExists=await db.query("SELECT to_regclass('public.gtt_pending_inquiries') AS name");
-if(!pendingExists.rows[0].name) await db.exec(await readFile(path.join(root,'netlify/database/migrations/20261021014500_pending_history.sql'),'utf8'));
+await db.exec('CREATE TABLE IF NOT EXISTS gtt_local_migrations(name text PRIMARY KEY)');
+const migrationDir=path.join(root,'netlify/database/migrations');
+for(const name of (await readdir(migrationDir)).filter(n=>n.endsWith('.sql')).sort()){
+  if((await db.query('SELECT name FROM gtt_local_migrations WHERE name=$1',[name])).rows.length)continue;
+  const baseline={'20261021010000_admin_records.sql':'gtt_records','20261021014500_pending_history.sql':'gtt_pending_inquiries'}[name];
+  if(baseline&&(await db.query('SELECT to_regclass($1) AS name',['public.'+baseline])).rows[0].name){await db.query('INSERT INTO gtt_local_migrations(name) VALUES($1)',[name]);continue;}
+  await db.transaction(async tx=>{await tx.exec(await readFile(path.join(migrationDir,name),'utf8'));await tx.query('INSERT INTO gtt_local_migrations(name) VALUES($1)',[name]);});
+}
 for(const [key,form,name,company,price]of [['private','angebot','TEST · Demo kupac','','CHF 186.–'],['business','b2b-anfrage','TEST · Demo firma','TEST Firma AG',''],['contact','kontakt','TEST · Demo kontakt','','']]){
   await createRecord(db,fromSubmission({inquiry_id:'preview-'+key,record_source:form,name,firma:company,email:'test@example.invalid',telefon:'+41 00 000 00 00',plz:'9000',fensterflaeche_m2:'1',tuerflaeche_m2:'0',berechneter_preis:price,aktion:price?'Herbst-/Winteraktion −15% (regulär CHF 219.–)':'',nachricht:'TEST · Lokalni primer za pregled. Nije narudžbina.'}));
 }
@@ -31,7 +35,7 @@ async function handle(req){
     const validation=validateSubmission({...values,formName:values['form-name']});
     if(!validation.protectedForm||Object.keys(validation.errors).length)return json({error:'Neispravni test podaci.'},422);
     if(values['bot-field'])return new Response(null,{status:204});
-    await recordSubmission(values,db);
+    await recordSubmission(values,db,{deploy:{context:'dev'}},{mode:'preview',offer,useAI:false});
     return json({ok:true,localTest:true});
   }
   if(url.pathname.startsWith('/api/admin/')){
