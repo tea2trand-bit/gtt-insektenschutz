@@ -6,12 +6,14 @@
     "test": "node --test tests/*.test.mjs",
     "build": "node scripts/build-static.mjs",
     "preview:admin": "node scripts/preview-admin.mjs",
+    "preview:quote": "node scripts/preview-quote.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@netlify/blobs": "^9.1.2",
     "@netlify/database": "^2.0.1",
-    "@netlify/functions": "^6.0.3"
+    "@netlify/functions": "^6.0.3",
+    "openai": "^7.39.0"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.10",
