@@ -2,6 +2,7 @@ import type { Config, Context } from "@netlify/functions";
 import { recordsAPI } from "../lib/records-api.mts";
 import { recordsDB } from "../lib/records-db.mts";
 import { RecordError } from "../lib/records.mts";
+import { importApprovedHistory } from "../lib/approved-history.mts";
 import {
   CHUNK_SIZE,
   FILE_ID_RE,
@@ -83,7 +84,9 @@ export default async (req: Request, context: Context) => {
 
   if (parts[0] === "records") {
     try {
-      return await recordsAPI(req, recordsDB(), parts.slice(1));
+      const db=recordsDB();
+      if(method==='GET'&&parts.length===1)await importApprovedHistory(db,context);
+      return await recordsAPI(req, db, parts.slice(1));
     } catch (err) {
       if (err instanceof RecordError) return json({ error: err.message }, err.status, { "Cache-Control": "no-store" });
       console.error("Admin records operation failed");

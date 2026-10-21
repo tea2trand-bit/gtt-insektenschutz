@@ -19,6 +19,12 @@ export async function recordSubmission(data: Record<string,string>, db: QueryDB,
 // Netlify verifies the platform event signature before invoking this handler.
 // Independent of customer email: a provider failure cannot prevent the record.
 export default {
+  async deploySucceeded() {
+    let context:any;
+    try{context=getContext();}catch{context=(globalThis as any).Netlify?.context||{};}
+    context={...context,deploy:{...context.deploy,context:deploymentContext(context)}};
+    if(context.deploy.context==='production')await importApprovedHistory(recordsDB(),context);
+  },
   async formSubmitted(event: FormSubmittedEvent) {
     let context:any;
     try{context=getContext();}catch{context=(globalThis as any).Netlify?.context||{};}
