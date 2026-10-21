@@ -1,4 +1,7 @@
 import type { Config, Context } from "@netlify/functions";
+import { recordsAPI } from "../lib/records-api.mts";
+import { recordsDB } from "../lib/records-db.mts";
+import { RecordError } from "../lib/records.mts";
 import {
   CHUNK_SIZE,
   FILE_ID_RE,
@@ -77,6 +80,16 @@ export default async (req: Request, context: Context) => {
 
   // ---- everything below requires a valid token ------------------------------
   if (!verifyRequest(req)) return json({ error: "Nicht angemeldet" }, 401);
+
+  if (parts[0] === "records") {
+    try {
+      return await recordsAPI(req, recordsDB(), parts.slice(1));
+    } catch (err) {
+      if (err instanceof RecordError) return json({ error: err.message }, err.status, { "Cache-Control": "no-store" });
+      console.error("Admin records operation failed");
+      return json({ error: "Evidencija trenutno nije dostupna. Proveri vezu sa bazom i pokušaj ponovo." }, 503, { "Cache-Control": "no-store" });
+    }
+  }
 
   const store = projectsStore(context);
 

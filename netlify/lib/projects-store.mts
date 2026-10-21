@@ -131,9 +131,16 @@ export function mediaUrl(fileId: string) {
 
 /* ------------------------------------------------------------------ auth -- */
 
+function adminPassword(): string | undefined {
+  const env = (globalThis as any).Netlify?.env;
+  const ctx = (globalThis as any).Netlify?.context?.deploy?.context || process.env.CONTEXT;
+  if (ctx === "deploy-preview") return env?.get("ADMIN_PREVIEW_PASSWORD") || process.env.ADMIN_PREVIEW_PASSWORD;
+  return env?.get("ADMIN_PASSWORD") || process.env.ADMIN_PASSWORD;
+}
+
 function secret(): string | null {
   const env = (globalThis as any).Netlify?.env;
-  const pw = env?.get("ADMIN_PASSWORD") || process.env.ADMIN_PASSWORD;
+  const pw = adminPassword();
   if (!pw) return null;
   const extra = env?.get("ADMIN_TOKEN_SECRET") || process.env.ADMIN_TOKEN_SECRET || "";
   return `gtt-admin:${pw}:${extra}`;
@@ -144,8 +151,7 @@ export function adminConfigured() {
 }
 
 export function checkPassword(candidate: unknown): boolean {
-  const env = (globalThis as any).Netlify?.env;
-  const pw = env?.get("ADMIN_PASSWORD") || process.env.ADMIN_PASSWORD;
+  const pw = adminPassword();
   if (!pw || typeof candidate !== "string") return false;
   const a = createHmac("sha256", "cmp").update(candidate).digest();
   const b = createHmac("sha256", "cmp").update(pw).digest();

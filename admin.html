@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>GTT Admin</title>
+<link rel="stylesheet" href="admin-records.css">
+<script src="admin-records.js" defer></script>
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -93,7 +95,7 @@ input::placeholder{color:#a3aba5}
   <div class="card login">
     <div class="brand"><span>✓</span><span><b>GTT</b> Admin</span></div>
     <h1 style="margin-top:14px">Prijava</h1>
-    <p class="muted">Upravljanje projektima (slike i video) na gtt-insektenschutz.ch</p>
+    <p class="muted">Projekti, sezonska ponuda i evidencija upita na gtt-insektenschutz.ch</p>
     <form id="loginForm">
       <input id="pw" type="password" placeholder="Lozinka" autocomplete="current-password" required>
       <div class="err" id="loginErr"></div>
@@ -115,7 +117,13 @@ input::placeholder{color:#a3aba5}
   </header>
 
   <main class="wrap">
-    <section class="card" id="offerCard">
+    <nav class="admin-nav" aria-label="Admin sekcije">
+      <button type="button" class="btn ghost" data-admin-tab="projects" aria-selected="false">Projekti</button>
+      <button type="button" class="btn ghost" data-admin-tab="offer" aria-selected="false">Sezonska ponuda</button>
+      <button type="button" class="btn ghost" data-admin-tab="records" aria-selected="true">Upiti / Anfragen</button>
+    </nav>
+    <section class="card records" data-admin-panel="records" id="recordsRoot" aria-live="polite"></section>
+    <section class="card" id="offerCard" data-admin-panel="offer" hidden>
       <h2>Sezonska ponuda (popust)</h2>
       <p class="muted" style="margin-top:-8px">Popust se automatski primjenjuje u kalkulatoru i na cijenama po m², a na stranici se pojavi obavijest. Kupac i vi u e-mailu vidite da je popust uračunat.</p>
       <form id="offerForm" class="offer-form">
@@ -152,7 +160,7 @@ input::placeholder{color:#a3aba5}
       </form>
     </section>
 
-    <section class="card">
+    <section class="card" data-admin-panel="projects" hidden>
       <h2>Dodaj nove projekte</h2>
       <label class="drop" id="drop">
         <strong>Prevuci slike ili video ovdje</strong>
@@ -171,7 +179,7 @@ input::placeholder{color:#a3aba5}
       </div>
     </section>
 
-    <section class="card">
+    <section class="card" data-admin-panel="projects" hidden>
       <h2>Objavljeni projekti</h2>
       <p class="muted" style="margin-top:-8px">Ovi projekti se prikazuju na vrhu sekcije „Abgeschlossene Projekte“, prije postojećih. Redoslijed mijenjaš strelicama.</p>
       <div class="tabs">
@@ -229,10 +237,11 @@ input::placeholder{color:#a3aba5}
   }
 
   // -------------------------------------------------------------- auth ----
-  function showApp(){ $("#loginView").hidden = true; $("#appView").hidden = false; loadItems(); loadOffer(); }
+  function showApp(){ $("#loginView").hidden = true; $("#appView").hidden = false; loadItems(); loadOffer(); window.dispatchEvent(new Event("gtt:admin-login")); }
   function logout(){
     token = null; try { sessionStorage.removeItem("gttAdminToken"); } catch {}
     $("#appView").hidden = true; $("#loginView").hidden = false;
+    window.dispatchEvent(new Event("gtt:admin-logout"));
   }
   $("#loginForm").addEventListener("submit", async (e) => {
     e.preventDefault(); $("#loginErr").textContent = "";
