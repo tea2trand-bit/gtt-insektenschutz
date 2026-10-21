@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { RecordError, amount, createRecord, fromSubmission, readRecord, changeRecord, deleteArchivedTestRecord, type QueryDB } from "./records.mts";
 import {renderQuoteEmail,offerNumber,legacyOfferNumber} from './quote-email.mts';
-import {calculateMeasuredOffer} from './admin-measurements.mts';
+import {calculateMeasuredOffer,refreshDraftContact} from './admin-measurements.mts';
+import {readRequestMeasurements} from './request-measurements.mts';
 import type {Offer} from './projects-store.mts';
 const reply = (data:unknown,status=200) => Response.json(data,{status,headers:{"Cache-Control":"no-store", "X-Content-Type-Options":"nosniff"}});
 export async function recordsAPI(req: Request, db: QueryDB, path: string[], options:{offer?:Offer;context?:any}={}) {
@@ -44,7 +45,13 @@ export async function recordsAPI(req: Request, db: QueryDB, path: string[], opti
   if (!id && method === "GET") {
     const archived=new URL(req.url).searchParams.get('archived')==='1';
     const {rows} = await db.query("SELECT r.id,r.source,r.received_at,r.updated_at,r.revision,r.document,(COALESCE(r.original->>'submissionId','')<>'' AND COALESCE(r.original->>'inquiryId','')='') AS historical,(SELECT COALESCE(jsonb_agg(v.version::text ORDER BY v.version),'[]'::jsonb) FROM gtt_quote_versions v WHERE v.record_id=r.id) AS offer_versions FROM gtt_records r WHERE (COALESCE(r.document->>'archivedAt','')<>'')=$1 ORDER BY r.received_at DESC LIMIT 1000",[archived]);
-    return reply({records:rows.map(({offer_versions,...record})=>({...record,offerReferences:offer_versions.flatMap((version:string)=>[offerNumber(record.id,Number(version)),legacyOfferNumber(record.id,Number(version))])}))});
+    const summary=await db.query(`WITH offer_amounts AS (
+      SELECT CASE WHEN jsonb_typeof(document->'agreedPrice')='number' THEN (document->>'agreedPrice')::numeric
+        WHEN jsonb_typeof(document->'quotedPrice')='number' THEN (document->>'quotedPrice')::numeric END AS amount
+      FROM gtt_records WHERE COALESCE(document->>'isTest','false')<>'true' AND COALESCE(document->>'archivedAt','')=''
+    ) SELECT COALESCE(sum(amount),0)::text AS total,count(amount)::int AS count FROM offer_amounts WHERE amount>=0`);
+    const offerSummary={total:Number(summary.rows[0].total),count:summary.rows[0].count};
+    return reply({offerSummary,records:rows.map(({offer_versions,...record})=>({...record,offerReferences:offer_versions.flatMap((version:string)=>[offerNumber(record.id,Number(version)),legacyOfferNumber(record.id,Number(version))])}))});
   }
   if (id === "import" && method === "POST") {
     const body:any = await req.json();
@@ -58,6 +65,11 @@ export async function recordsAPI(req: Request, db: QueryDB, path: string[], opti
     return reply({created,duplicates:inputs.length-created});
   }
   if (!/^GTT-[a-f0-9]{24}$/.test(id || "")) throw new RecordError("Neispravan ID kartona.");
+  if(path[1]==='measurement-proposal'&&path.length===2&&method==='GET'){
+    const record=await readRecord(db,id);
+    const d=record.document;
+    return reply(await readRequestMeasurements(d.request||'',d.postalCode||'',{name:d.name,email:d.email,telefon:d.phone,adresse:d.address,firma:d.company},{useAI:options.context?.deploy?.context==='production'}));
+  }
   if(path[1]==='measurements'&&path.length===2&&method==='POST')return reply(await calculateMeasuredOffer(db,id,await req.json(),options));
   if(path.length===1&&method==='DELETE'){
     const body:any=await req.json();
@@ -92,6 +104,8 @@ export async function recordsAPI(req: Request, db: QueryDB, path: string[], opti
   if (path.length===1 && method === "GET") return reply({record:await readRecord(db,id)});
   if (path.length===1 && method === "PATCH") {
     const body:any=await req.json();
+    const refreshed=await refreshDraftContact(db,id,body,options);
+    if(refreshed)return reply(refreshed);
     return reply({record:await changeRecord(db,id,body)});
   }
   return reply({error:"Metod nije dozvoljen."},405);

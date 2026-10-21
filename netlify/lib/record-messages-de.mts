@@ -42,5 +42,16 @@ export function recordMessageDE(message:string){
   'Metod nije dozvoljen.':'Methode nicht erlaubt.',
   'Reklamacija nije pronađena.':'Reklamation nicht gefunden.'
  };
- return messages[message]||'Die Angaben konnten nicht gespeichert werden. Bitte prüfen und erneut versuchen.';
+ const measurementMessages=[
+  'Die Anfrage wurde geändert. Bitte neu öffnen.',
+  'Masse können hier vor dem Versand der Offerte erfasst werden.',
+  'Bitte mindestens ein Fenster oder eine Tür erfassen.',
+  'Bitte eine gültige Gesamtfläche in m² eingeben.',
+  'Bitte Anzahl, Breite und Höhe in cm prüfen.',
+  'Bitte die Einzelmasse für die Fertigung prüfen.',
+  'Bitte die Anfahrtskosten als gültigen CHF-Betrag prüfen.',
+  'Bitte die Berechnung neu öffnen.',
+  'Die Anfrage wurde geändert oder der Versand läuft. Bitte neu öffnen.'
+ ];
+ return messages[message]||(measurementMessages.includes(message)?message:'Die Angaben konnten nicht gespeichert werden. Bitte prüfen und erneut versuchen.');
 }

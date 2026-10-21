@@ -2,17 +2,18 @@
   const root=document.getElementById('recordsRoot');
   const STATUS={'Novi upit':'Neue Anfrage','Ponuda poslata':'Offerte versendet','Čeka odgovor':'Offerte versendet','Prihvaćeno':'Angenommen','Odbijeno':'Abgelehnt','Montaža':'Montage','Završeno':'Abgeschlossen','Reklamationen':'Reklamationen'};
   const STEPS=['Novi upit','Ponuda poslata','Prihvaćeno','Odbijeno','Montaža','Završeno','Reklamationen'];
-  const SOURCE={'Kalkulator':'Rechner','Kontakt':'Kontaktformular','B2B':'B2B','Ručni unos':'Manuell'};
+  const SOURCE={'Kalkulator':'Kalkulator','Kontakt':'Kontaktformular','B2B':'B2B','Ručni unos':'Manuell'};
   const EVENTS={created:'Anfrage angelegt',archive:'Anfrage archiviert',restore:'Anfrage wiederhergestellt','historical-complete':'Frühere Anfrage abgeschlossen','start-installation':'Montage begonnen',complete:'Auftrag abgeschlossen',decision:'Entscheidung erfasst',payment:'Zahlung erfasst',complaint:'Reklamation aktualisiert',appointment:'Montagetermin geplant','cancel-appointment':'Montagetermin abgesagt',quote_intake:'Masse und Offerte automatisch erstellt',quote_email:'E-Mail-Versand bearbeitet',customer_acceptance:'Bestätigung des Kunden erhalten'};
   const canonical=s=>s==='Čeka odgovor'?'Ponuda poslata':s;
   const money=n=>n==null?'Nicht erfasst':new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF'}).format(n);
   const date=s=>s?new Date(s).toLocaleDateString('de-CH'):'—';
   const today=()=>new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Zurich'});
+  const issueText=i=>i.code==='missing_postal_code'?'PLZ des Montageorts fehlt. Der Richtpreis kann als Entwurf gespeichert werden; Anfahrtskosten sind noch offen.':i.code==='travel_cost_review'?'Anfahrtskosten sind noch offen. Der Richtpreis kann als Entwurf gespeichert werden.':typeof i==='string'?i:i.question;
   const productText=s=>(s||'').replace(/Prozori:/g,'Fenster:').replace(/vrata:/g,'Türen:');
   const $=s=>root.querySelector(s);
   const e=(tag,attrs={},...children)=>{const n=document.createElement(tag);for(const[k,v]of Object.entries(attrs)){if(k.startsWith('on'))n.addEventListener(k.slice(2),v);else if(k==='class')n.className=v;else if(v!==false&&v!=null)n.setAttribute(k,v===true?'':v);}children.flat().forEach(c=>c!=null&&n.append(c));return n;};
   const btn=(label,fn,kind='ghost small')=>e('button',{type:'button',class:'btn '+kind,onclick:fn},label);
-  let records=[],complaintCases=[],selected=null,archived=false,filter='Novi upit',montageFilter='',inquiryFilter='',complaintFilter='active',search='',busy=false,deepLinkResolved=false;
+  let records=[],complaintCases=[],offerSummary=null,selected=null,archived=false,filter='Novi upit',montageFilter='',inquiryFilter='',complaintFilter='active',search='',busy=false,deepLinkResolved=false;
   const hasAppointment=d=>!d.archivedAt&&d.appointmentAt&&d.appointmentTime&&d.appointmentStatus!=='cancelled'&&['Prihvaćeno','Montaža'].includes(d.status);
   const hasOpenComplaint=d=>(d.complaints||[]).some(c=>['Otvorena','U radu'].includes(c.status));
   const needsMeasurement=d=>canonical(d.status)==='Novi upit'&&!d.intake?.quote&&!(d.quotedPrice>0)&&!d.intake?.measurements?.length&&!d.intake?.manualReview;
@@ -33,7 +34,7 @@
     }},recordName(r));
   }
   function recordRow(r,...children){
-    return e('div',{class:'record-row',role:'group','aria-label':'Anfrage '+recordName(r),onclick:ev=>{
+    return e('div',{class:'record-row record-inquiry-row',role:'group','aria-label':'Anfrage '+recordName(r),onclick:ev=>{
       if(busy||ev.defaultPrevented||ev.button!==0||ev.ctrlKey||ev.metaKey||ev.shiftKey||ev.altKey)return;
       if(ev.target.closest('a,button,input,select,textarea,label,summary,[role="button"],[role="link"],[contenteditable],[tabindex]'))return;
       if(window.getSelection()?.toString())return;
@@ -51,11 +52,11 @@
   function error(err){const box=$('#recordError');if(box)box.textContent=err.message;else root.prepend(e('p',{class:'record-error',role:'alert'},err.message));}
   async function load(){
     try{
-      const [recordData,complaintData]=await Promise.all([api(archived?'?archived=1':''),api('',{complaint:true})]);records=recordData.records;complaintCases=complaintData.complaints;renderList();
+      const [recordData,complaintData]=await Promise.all([api(archived?'?archived=1':''),api('',{complaint:true})]);records=recordData.records;offerSummary=recordData.offerSummary;complaintCases=complaintData.complaints;renderList();
       if(!deepLinkResolved){deepLinkResolved=true;const params=new URL(location.href).searchParams,id=params.get('anfrage'),complaint=params.get('reklamation');if(/^[a-f0-9-]{36}$/i.test(complaint||''))await openComplaint(complaint);else if(/^GTT-[a-f0-9]{24}$/.test(id||''))await open(id);}
     }catch(err){root.replaceChildren(e('h2',{},'Anfragen'),e('p',{class:'record-error'},err.message),btn('Erneut versuchen',load));}
   }
-  async function open(id){try{selected=(await api('/'+id)).record;renderCard();root.scrollIntoView({block:'start'});$('.record-heading').focus({preventScroll:true});}catch(err){error(err);}}
+  async function open(id,target=''){try{selected=(await api('/'+id)).record;renderCard();if(target==='measurements'){await measurementCalculator(true);return;}root.scrollIntoView({block:'start'});$('.record-heading').focus({preventScroll:true});}catch(err){error(err);}}
   function renderList(){
     selected=null;
     root.replaceChildren(e('div',{class:'record-head'},e('div',{},e('h2',{},archived?'Archiv':'Anfragen'),e('p',{class:'record-note'},archived?'Archivierte Anfragen können jederzeit wiederhergestellt werden.':'Website-Anfragen und Offerten werden automatisch erfasst.')),e('div',{class:'record-actions'},...(archived?[]:[btn('Kunde hinzufügen',manual,'')]),btn('Aktualisieren',load))));
@@ -79,18 +80,23 @@
       root.append(phases);
     }
     if(filter==='Reklamationen'&&!archived)root.append(e('div',{class:'record-actions'},...[['active','Offen / in Bearbeitung'],['Erledigt','Erledigt']].map(([value,label])=>btn(label,()=>{complaintFilter=value;renderList();},complaintFilter===value?'small':'ghost small'))));
-    root.append(e('div',{class:'record-toolbar'},e('input',{'aria-label':'Anfragen durchsuchen',placeholder:'Name, Kontakt oder Offertnummer suchen',value:search,oninput:ev=>{search=ev.target.value;drawRows();}})),e('div',{id:'recordRows',class:'record-list'}));drawRows();
+    root.append(e('div',{class:'record-toolbar'},e('input',{'aria-label':'Anfragen durchsuchen',placeholder:'Name, Kontakt oder Offertnummer suchen',value:search,oninput:ev=>{search=ev.target.value;drawRows();}}),offerSummary?e('section',{class:'record-offer-summary','aria-label':'Gesamtwert aktiver Offerten'},e('span',{},offerSummary.count+' Offerten'),e('strong',{},money(offerSummary.total))):null),e('div',{id:'recordRows',class:'record-list'}));drawRows();
   }
   function drawRows(){
     const box=$('#recordRows');box.replaceChildren();
     const found=records.filter(r=>(!filter||listStage(r.document)===filter)&&(filter!=='Novi upit'||!inquiryFilter||(inquiryFilter==='measure'?needsMeasurement(r.document):!needsMeasurement(r.document)))&&(filter!=='Montaža'||!montageFilter||montageState(r.document)===montageFilter)&&(!search||[r.id,offerReference(r),...(r.offerReferences||[]),...Object.values(r.document).filter(x=>typeof x==='string')].join(' ').toLowerCase().includes(search.trim().toLowerCase())));
     if(filter==='Montaža')found.sort((a,b)=>((a.document.appointmentAt||'9999')+'T'+(a.document.appointmentTime||'')).localeCompare((b.document.appointmentAt||'9999')+'T'+(b.document.appointmentTime||'')));
-    found.filter(()=>filter!=='Reklamationen'||complaintFilter!=='Erledigt').forEach(r=>{const d=r.document;box.append(recordRow(r,e('div',{},recordLink(r),d.isTest?e('span',{class:'record-badge test'},'TEST'):null,e('small',{},d.company||d.email||d.phone),referenceText(r)?e('small',{},referenceText(r)):null,hasAppointment(d)?e('small',{},'Montagetermin: '+appointmentText(d)):null),e('div',{class:'record-source'},SOURCE[r.source]||r.source,e('small',{},date(r.received_at))),e('div',{class:'record-price'},money(d.agreedPrice??d.quotedPrice),e('small',{},d.customerAcceptance?.pricePreliminary?'Vorläufige Offerte':d.agreedPrice!=null?'Vereinbart':'Offerte')),listActions(r)));});
+    found.filter(()=>filter!=='Reklamationen'||complaintFilter!=='Erledigt').forEach(r=>{const d=r.document;box.append(recordRow(r,e('div',{},recordLink(r),d.isTest?e('span',{class:'record-badge test'},'TEST'):null,e('small',{},d.company||d.email||d.phone),referenceText(r)?e('small',{},referenceText(r)):null,hasAppointment(d)?e('small',{},'Montagetermin: '+appointmentText(d)):null),e('div',{class:'record-source'},SOURCE[r.source]||r.source,e('small',{},date(r.received_at))),priceCell(r),listActions(r)));});
     if(filter==='Reklamationen'&&!archived)complaintCases.filter(c=>(complaintFilter==='Erledigt'?c.status==='Erledigt':c.status!=='Erledigt')&&(!search||[c.lookup,c.email,c.description,c.matched_name,'REK-'+String(c.number).padStart(3,'0')].join(' ').toLowerCase().includes(search.trim().toLowerCase()))).forEach(c=>{
       const link=e('a',{class:'record-open-link',href:'/admin?reklamation='+encodeURIComponent(c.id),onclick:ev=>{if(ev.button!==0||ev.ctrlKey||ev.metaKey||ev.shiftKey||ev.altKey)return;ev.preventDefault();openComplaint(c.id);}},c.matched_name||c.lookup);
       box.append(e('div',{class:'record-row',role:'group','aria-label':'Reklamation '+c.lookup,onclick:ev=>{if(!ev.defaultPrevented&&ev.button===0&&!ev.ctrlKey&&!ev.metaKey&&!ev.shiftKey&&!ev.altKey&&!ev.target.closest('a,button,input,select,textarea')&&!window.getSelection()?.toString())openComplaint(c.id);}},e('div',{},link,e('small',{},c.email)),e('div',{},'REK-'+String(c.number).padStart(3,'0'),e('small',{},date(c.created_at))),e('div',{},c.match_status==='matched'?'Auftrag zugeordnet':'Zuordnung prüfen'),e('span',{class:'record-badge'},c.status)));
     });
     if(!box.childNodes.length)box.append(e('p',{class:'record-empty'},archived?'Das Archiv ist leer.':'Keine passenden Anfragen.'));
+  }
+  function priceCell(r){
+    const d=r.document,amount=d.agreedPrice??d.quotedPrice;
+    const box=e('div',{class:'record-price'},money(amount),e('small',{},d.customerAcceptance?.pricePreliminary?'Vorläufige Offerte':d.agreedPrice!=null?'Vereinbart':'Offerte'));
+    return box;
   }
   async function openComplaint(id){try{const {complaint}=await api('/'+id,{complaint:true});renderComplaintCard(complaint);}catch(err){error(err);}}
   function renderComplaintCard(c){
@@ -106,8 +112,9 @@
   function listActions(r){
     const d=r.document,actions=e('div',{class:'record-row-actions'},e('span',{class:'record-badge'},stageLabel(d)));
     if(d.intake?.quote&&d.intake.version)actions.append(btn('Offerte ansehen',()=>showOffer(r.id),'small'));
+    else if((d.agreedPrice??d.quotedPrice)==null&&!d.archivedAt&&canonical(d.status)==='Novi upit')actions.append(btn('Ausmessen',()=>{if(!busy)open(r.id,'measurements');},'small'));
     if(isHistorical(r)&&!d.archivedAt&&d.status!=='Završeno')actions.append(btn('Abschliessen',()=>changeListedRecord(r,'historical-complete','✓ Auftrag abgeschlossen.'),'small'));
-    actions.append(btn(archived?'Wiederherstellen':'Entfernen',()=>archiveRecord(r,archived),archived?'ghost small':'ghost small record-remove'));
+    if(archived||isHistorical(r))actions.append(btn(archived?'Wiederherstellen':'Entfernen',()=>archiveRecord(r,archived),archived?'ghost small':'ghost small record-remove'));
     if(archived&&d.archivedAt&&d.isTest===true)actions.append(btn('Endgültig entfernen',()=>deleteTestRecord(r),'ghost small record-remove'));
     return actions;
   }
@@ -133,24 +140,95 @@
     try{selected=(await api('/'+selected.id,{method:'PATCH',json:{...body,revision:selected.revision}})).record;renderCard();root.prepend(e('p',{class:'record-note',role:'status'},'✓ Gespeichert.'));}
     catch(err){error(err);}finally{busy=false;root.querySelectorAll('button').forEach(b=>b.disabled=false);}
   }
-  function measurementCalculator(){
+  async function measurementCalculator(fromList=false){
     if(hasDirtyForm()){error(Error('Bitte zuerst Ihre Änderungen speichern.'));return;}
-    const r=selected,requestId=crypto.randomUUID(),rows=e('div'),total=e('p',{class:'record-note',role:'status'}),save=e('button',{type:'submit',class:'btn'},'Offerte berechnen und speichern');
-    const form=e('form',{id:'measurementForm',class:'record-appointment',oninput:()=>{form.dataset.dirty='true';total.textContent='';},onsubmit:async ev=>{
-      ev.preventDefault();if(busy)return;busy=true;save.disabled=true;
-      try{const data=await api('/'+r.id+'/measurements',{method:'POST',json:{revision:r.revision,requestId,measurements:measurements()}});selected=data.record;renderCard();root.prepend(e('p',{class:'record-note',role:'status'},'✓ Masse und Offertentwurf gespeichert. Keine E-Mail versendet.'));}
+    const r=selected,requestId=crypto.randomUUID(),rows=e('div'),total=e('div',{class:'record-note record-calculation-total',role:'status'}),proposal=e('div'),save=e('button',{type:'submit',class:'btn'},'Masse speichern');
+    const travelIncluded=e('input',{type:'checkbox',name:'travelIncluded'});travelIncluded.checked=r.document.intake?.quote?.travelCosts?.confirmedByAdmin===true;
+    const travelField=input('Anfahrtskosten (CHF, inkl. MwSt.)','travelAmountCHF','number',r.document.intake?.quote?.travelCosts?.amountCHF||'');
+    const travelAmount=travelField.querySelector('input');travelAmount.disabled=travelIncluded.checked;
+    const mode=e('select',{'aria-label':'Masse eingeben als'},e('option',{value:'dimensions'},'Breite × Höhe (cm)'),e('option',{value:'area'},'Gesamtflächen (m²)'));
+    const areaFields=e('div',{class:'record-fields'},input('Fenster gesamt (m²)','windowArea','number',''),input('Türen / Plissee gesamt (m²)','doorArea','number',''));
+    areaFields.querySelectorAll('input').forEach(n=>n.step='any');
+    let calculationRun=0,timer,areaManual=false;
+    const measureRows=e('div',{},rows,btn('+ Fenster / Tür hinzufügen',()=>{addRow();form.dataset.dirty='true';queueCalculation();}));
+    const detailPanel=e('details',{},e('summary',{},'Kundenanfrage'));
+    const travelPanel=e('details',{},e('summary',{},'Anfahrtskosten (optional)'),e('label',{class:'record-travel-confirmation'},travelIncluded,'Anfahrt inklusive'),travelField);
+    const form=e('form',{id:'measurementForm',class:'record-appointment',novalidate:true,oninput:changed,onchange:changed,onsubmit:async ev=>{
+      ev.preventDefault();if(busy||!validCalculation(true))return;busy=true;save.disabled=true;
+      try{const data=await api('/'+r.id+'/measurements',{method:'POST',json:{revision:r.revision,requestId,measurementSource:'admin_confirmed',...travelData(),measurements:measurements(),...(mode.value==='area'&&validRows()?{productionMeasurements:dimensionMeasurements()}:{})}});selected=data.record;renderCard();root.prepend(e('p',{class:'record-note',role:'status'},'✓ Masse und Offertentwurf gespeichert. Keine E-Mail versendet.'));root.scrollIntoView({block:'start'});}
       catch(err){total.textContent=err.message;}finally{busy=false;save.disabled=false;}
     }});
-    function measurements(){return Array.from(rows.children).map(row=>({type:row.querySelector('[name=type]').value,quantity:Number(row.querySelector('[name=quantity]').value),width:Number(row.querySelector('[name=width]').value),height:Number(row.querySelector('[name=height]').value)}));}
-    function addRow(value={}){
-      const type=e('select',{name:'type','aria-label':'Elementart'},e('option',{value:'window'},'Fenster'),e('option',{value:'door'},'Tür / Plissee'));type.value=value.type||'window';
-      const row=e('div',{class:'record-measurement-row'},e('label',{},'Element',type),input('Anzahl','quantity','number',value.quantity||1,true),input('Breite (cm)','width','number',value.width||'',true),input('Höhe (cm)','height','number',value.height||'',true),btn('Entfernen',()=>{row.remove();form.dataset.dirty='true';total.textContent='';}));
+    function dimensionMeasurements(){return Array.from(rows.children).map(row=>({type:row.querySelector('[name=type]').value,quantity:Number(row.querySelector('[name=quantity]').value),width:Number(row.querySelector('[name=width]').value),height:Number(row.querySelector('[name=height]').value)}));}
+    function travelData(){return travelIncluded.checked?{travelIncluded:true}:travelAmount.value===''?{}:{travelAmountCHF:Number(travelAmount.value)};}
+    function measurements(){return mode.value==='dimensions'?dimensionMeasurements():[['window','windowArea'],['door','doorArea']].map(([type,name])=>({type,mode:'area',areaM2:Number(areaFields.querySelector('[name='+name+']').value)})).filter(m=>m.areaM2>0);}
+    function validRows(){return rows.children.length>0&&Array.from(rows.querySelectorAll('input,select')).every(n=>n.checkValidity())&&dimensionMeasurements().every(m=>m.width>0&&m.height>0);}
+    function syncAreas(){
+      if(areaManual)return;if(!validRows()){areaFields.querySelectorAll('input').forEach(n=>n.value='');return;}
+      const sums={window:0,door:0};dimensionMeasurements().forEach(m=>sums[m.type]+=m.quantity*m.width*m.height/10000);
+      areaFields.querySelector('[name=windowArea]').value=Math.round(sums.window*1e8)/1e8;areaFields.querySelector('[name=doorArea]').value=Math.round(sums.door*1e8)/1e8;
+    }
+    function changed(ev){
+      form.dataset.dirty='true';
+      if(areaFields.contains(ev.target))areaManual=true;
+      if(rows.contains(ev.target)){areaManual=false;syncAreas();}
+      travelAmount.disabled=travelIncluded.checked;
+      areaFields.hidden=mode.value!=='area';measureRows.hidden=mode.value!=='dimensions';
+      queueCalculation();
+    }
+    function validCalculation(report=false){
+      const controls=mode.value==='area'?areaFields.querySelectorAll('input'):rows.querySelectorAll('input,select');
+      const invalid=Array.from(controls).find(n=>!n.checkValidity());if(invalid){if(report)invalid.reportValidity();return false;}
+      if(!measurements().length){if(report)total.textContent='Bitte mindestens eine Fläche eingeben.';return false;}
+      if(!travelAmount.checkValidity()){if(report){travelPanel.open=true;travelAmount.reportValidity();}return false;}
+      if(!areaManual){const confirmation=proposal.querySelector('input[required]');if(confirmation&&!confirmation.checked){if(report)confirmation.reportValidity();return false;}}
+      return true;
+    }
+    function queueCalculation(){clearTimeout(timer);calculationRun++;total.replaceChildren();timer=setTimeout(calculate,250);}
+    async function calculate(){
+      const run=++calculationRun;
+      if(!validCalculation()){total.replaceChildren();return;}
+      total.textContent='Preis wird berechnet …';
+      try{const data=await api('/'+r.id+'/measurements',{method:'POST',json:{revision:r.revision,preview:true,...travelData(),measurements:measurements()}});if(run!==calculationRun||!form.isConnected)return;
+        total.replaceChildren(e('p',{},'Fenster: '+data.quote.areas.fenster.toLocaleString('de-CH',{maximumFractionDigits:4})+' m² · Türen / Plissee: '+data.quote.areas.tueren.toLocaleString('de-CH',{maximumFractionDigits:4})+' m²'),e('strong',{},'Richtpreis inkl. MwSt.: '+money(data.quote.totalCHF)));
+        const issues=(data.issues||[]).filter(i=>i.code!=='travel_cost_review'||!data.issues.some(q=>q.code==='missing_postal_code'));
+        if(issues.length)total.append(e('ul',{},...issues.map(i=>e('li',{},issueText(i)))));
+        if(data.quote.travelCosts.confirmedByAdmin&&data.quote.travelCosts.amountCHF)total.append(e('p',{},'Anfahrt enthalten: '+money(data.quote.travelCosts.amountCHF)));
+      }catch(err){if(run===calculationRun)total.textContent=err.message;}
+    }
+    function addRow(value={},suggestion=null){
+      const type=e('select',{name:'type',required:true,'aria-label':'Elementart'},e('option',{value:'window'},'Fenster'),e('option',{value:'door'},'Tür / Plissee'));type.value=value.type||'window';
+      const row=e('div',{class:'record-measurement-row'},e('label',{},(suggestion?.label||'Element')+(suggestion&&!suggestion.type?' · vorläufig als Fenster':''),type),input('Anzahl','quantity','number',value.quantity??(suggestion?'':1),true),input('Breite (cm)','width','number',value.width||'',true),input('Höhe (cm)','height','number',value.height||'',true),btn('Entfernen',()=>{row.remove();form.dataset.dirty='true';if(!areaManual)syncAreas();queueCalculation();}));
+      if(suggestion?.variants.length>1){
+        row.prepend(e('p',{class:'record-note record-measurement-basis'},'Vorläufige Kundenmasse übernommen. Vor der Fertigung vor Ort prüfen.'));
+      }
       row.querySelector('[name=quantity]').setAttribute('step','1');row.querySelector('[name=quantity]').setAttribute('min','1');rows.append(row);
     }
-    const existing=(r.document.intake?.measurements||[]).filter(m=>m.mode==='dimensions');
+    const existing=(r.document.intake?.productionMeasurements||r.document.intake?.measurements||[]).filter(m=>m.mode==='dimensions');
     if(existing.length)existing.forEach(m=>addRow({...m,width:m.width*(m.widthUnit==='m'?100:m.widthUnit==='mm'?0.1:1),height:m.height*(m.heightUnit==='m'?100:m.heightUnit==='mm'?0.1:1)}));else addRow();
-    form.append(e('h3',{},'Masse nach dem Ausmessen'),e('p',{class:'record-note'},'Breite und Höhe in Zentimetern. Der Preis wird mit den aktuellen Website-Konditionen berechnet.'),rows,btn('+ Fenster / Tür hinzufügen',()=>{addRow();form.dataset.dirty='true';}),e('div',{class:'record-actions'},btn('Preis berechnen',async()=>{if(!form.reportValidity())return;try{const data=await api('/'+r.id+'/measurements',{method:'POST',json:{revision:r.revision,preview:true,measurements:measurements()}});total.textContent='Gesamtbetrag inkl. MwSt.: '+money(data.quote.totalCHF);}catch(err){total.textContent=err.message;}}),save,btn('Abbrechen',()=>{if(form.dataset.dirty==='true'&&!confirm('Ungespeicherte Masse verwerfen?'))return;$('#inlineAction').replaceChildren();})),total,e('p',{class:'record-note'},'Speichert die Masse und einen Offertentwurf. Es wird keine E-Mail versendet.'));
-    $('#inlineAction').replaceChildren(form);form.querySelector('[name=width]').focus();form.scrollIntoView({block:'center',behavior:'smooth'});
+    for(const [type,key]of [['window','windowArea'],['door','doorArea']]){
+      const measured=(r.document.intake?.measurements||[]).filter(m=>m.type===type).reduce((sum,m)=>sum+m.areaM2,0);
+      const old=productText(r.document.products).match(type==='window'?/Fenster:\s*([\d.,]+)\s*m²/:/Türen:\s*([\d.,]+)\s*m²/);
+      if(measured||old)areaFields.querySelector('[name='+key+']').value=measured||Number(old[1].replace(',','.'));
+    }
+    if(existing.length)syncAreas();
+    const hasStoredArea=Array.from(areaFields.querySelectorAll('input')).some(n=>Number(n.value)>0);
+    if(!existing.length&&hasStoredArea){mode.value='area';areaManual=true;}
+    areaFields.hidden=mode.value!=='area';measureRows.hidden=mode.value!=='dimensions';
+    function close(){if(form.dataset.dirty==='true'&&!confirm('Ungespeicherte Masse verwerfen?'))return;clearTimeout(timer);calculationRun++;if(fromList)load();else renderCard();}
+    form.classList.add('record-measurement-form');
+    form.append(mode,measureRows,areaFields,proposal,detailPanel,travelPanel,total,e('div',{class:'record-actions'},save,btn('Abbrechen',close)),e('p',{class:'record-note'},'Speichert die Masse und einen Offertentwurf. Keine E-Mail wird versendet.'));
+    root.replaceChildren(e('div',{class:'record-head'},btn('← Zurück',close),e('span',{class:'record-note'},recordName(r))),e('h2',{class:'record-heading',tabindex:'-1'},'Ausmessen'),e('p',{class:'record-note'},'Masse vor Ort eintragen. Flächen und Richtpreis werden automatisch berechnet.'),form);
+    if(r.document.request)detailPanel.append(e('p',{class:'record-note'},r.document.request));
+    (mode.value==='area'?areaFields:rows).querySelector('input').focus();root.scrollIntoView({block:'start'});
+    if(!existing.length&&!hasStoredArea&&r.document.request){
+      proposal.textContent='Masse aus Anfrage werden gelesen …';
+      try{const data=await api('/'+r.id+'/measurement-proposal');if(!form.isConnected||form.dataset.dirty==='true')return;
+        if(data.rows.length){rows.replaceChildren();data.rows.forEach(s=>addRow({type:s.type,quantity:s.quantity,...(s.variants.find(v=>v.basis==='with_frame')||s.variants[0]||{})},s));}
+        proposal.replaceChildren(...(data.rows.length?[e('p',{class:'record-note'},'Kundenmasse übernommen · vor Ort prüfen.')]:[]));if(data.rows.length)detailPanel.append(...(data.warnings||[]).map(w=>e('p',{class:'record-note'},w)));
+        if(data.rows.some(s=>s.confirmationRequired))proposal.append(e('label',{class:'record-travel-confirmation'},e('input',{type:'checkbox',required:true}),'Die erfassten Masse und Stückzahlen entsprechen der gewünschten Ausführung.'));
+        syncAreas();calculate();
+      }catch(err){proposal.textContent=err.message;}
+    }else calculate();
   }
   function input(label,name,type='text',value='',required=false){return e('label',{},label,type==='textarea'?e('textarea',{name,required},value??''):e('input',{type,name,value:value??'',required,...(type==='number'?{min:0,step:'.01'}:{})}));}
   function manual(){
@@ -173,9 +251,9 @@
     if(!d.archivedAt){
       const next=e('section',{class:'record-next-step'});
       if(hasOpenComplaint(d))next.append(btn('Reklamation bearbeiten',()=>{const box=$('#recordComplaints');box.closest('details').open=true;box.scrollIntoView({block:'start',behavior:'smooth'});},''));
-      if(legacy&&status!=='Završeno')next.append(btn('Abschliessen',()=>mutate({action:'historical-complete'}),''));
+      if(legacy&&status!=='Završeno')next.append(btn('Abschliessen',()=>mutate({action:'historical-complete'}),'record-complete'));
       if(status==='Ponuda poslata')next.append(e('p',{class:'record-note'},'Die Offerte wurde versendet. Der Kunde kann sie über den Link in der E-Mail bestätigen.'));
-      else if(status==='Novi upit')next.append(btn('Masse erfassen / berechnen',measurementCalculator,''));
+      else if(status==='Novi upit')next.append(btn('Ausmessen',()=>measurementCalculator(),''));
       if(status==='Prihvaćeno')next.append(btn(hasAppointment(d)?'Montagetermin ändern':'Montagetermin planen',schedule,''),btn('Montage beginnen',()=>mutate({action:'start-installation'}),'ghost'));
       if(status==='Montaža')next.append(btn('Auftrag abschliessen',()=>mutate({action:'complete'}),''));
       if(next.childNodes.length)root.append(next);
@@ -183,7 +261,7 @@
     }
     root.append(e('div',{id:'inlineAction'}),e('p',{id:'recordError',class:'record-error',role:'alert'}));
     if(!d.archivedAt){
-      const notes=e('section',{class:'record-extra'},e('h3',{},'Interne Notiz'));
+      const notes=e('details',{class:'record-extra'},e('summary',{},'Interne Notiz'));
       const form=e('form',{id:'recordForm',oninput:()=>form.dataset.dirty='true',onsubmit:async ev=>{ev.preventDefault();await mutate({action:'update',patch:Object.fromEntries(new FormData(form))});}});
       form.append(input('Notiz zum Auftrag','notes','textarea',d.notes),e('p',{},e('button',{type:'submit',class:'btn small'},'Notiz speichern')));notes.append(form);root.append(notes);
       const decisions=e('div',{class:'record-actions'},btn('Zusage manuell erfassen',()=>decision('Prihvaćeno')),btn('Absage erfassen',()=>decision('Odbijeno')));
@@ -192,7 +270,7 @@
       const contact=e('details',{class:'record-extra',id:'recordContact'},e('summary',{},'Kontakt korrigieren'));
       const correction=e('form',{id:'contactForm',oninput:()=>correction.dataset.dirty='true',onsubmit:async ev=>{ev.preventDefault();await mutate({action:'update',patch:Object.fromEntries(new FormData(correction))});}}),fields=e('div',{class:'record-fields'});
       for(const [label,key,type]of [['Name','name'],['Firma','company'],['E-Mail','email','email'],['Telefon','phone','tel'],['Montageadresse','address'],['PLZ / Ort','postalCode']])fields.append(input(label,key,type||'text',d[key]));
-      correction.append(fields,e('p',{},e('button',{type:'submit',class:'btn small'},'Kontakt speichern')));contact.append(correction);root.append(contact,e('div',{class:'record-actions record-extra'},btn('Anfrage entfernen',()=>archiveRecord(r),'ghost small record-remove')));
+      correction.append(fields,e('p',{},e('button',{type:'submit',class:'btn small'},'Kontakt speichern')));contact.append(correction);root.append(contact,...(legacy?[e('div',{class:'record-actions record-extra'},btn('Anfrage entfernen',()=>archiveRecord(r),'ghost small record-remove'))]:[]));
     }
   }
   async function decision(status){
@@ -220,7 +298,8 @@
     const box=e('section',{class:'record-quote-summary'});
     const recordId=selected.id;
     if(referenceText(selected))box.append(e('p',{class:'record-note'},referenceText(selected)));
-    const messages={draft:'Offertentwurf nach Ausmessen · Noch nicht versendet.',preview_only:'Testvorschau: Keine E-Mail versendet.',queued:'Offerte wird zum Versand vorbereitet.',processing:'E-Mail wird versendet.',accepted:'Offerte vom E-Mail-Dienst angenommen.',failed:'Versand fehlgeschlagen. Bitte prüfen.',unknown:'Versandausgang unklar. Bitte prüfen.',not_available:'Keine Kunden-E-Mail vorhanden.'};
+    const messages={draft:'Offertentwurf · Noch nicht versendet.',preview_only:'Testvorschau: Keine E-Mail versendet.',queued:'Offerte wird zum Versand vorbereitet.',processing:'E-Mail wird versendet.',accepted:'Offerte vom E-Mail-Dienst angenommen.',failed:'Versand fehlgeschlagen. Bitte prüfen.',unknown:'Versandausgang unklar. Bitte prüfen.',not_available:'Keine Kunden-E-Mail vorhanden.'};
+    if(intake.email?.status==='draft'&&intake.clarification?.length)box.append(e('div',{class:'record-alert',role:'status'},...intake.clarification.map(i=>e('p',{},issueText(i)))));
     if(intake.measurementRequired)box.append(e('p',{class:'record-note'},'Ausmessen erforderlich · Termin mit dem Kunden abstimmen, danach Masse erfassen.'));
     else if(intake.status!=='priced')box.append(e('h3',{},'Prüfung erforderlich'),e('ul',{},...(intake.clarification||[]).map(q=>e('li',{},typeof q==='string'?q:q.question))));
     box.append(e('p',{class:'record-note'},messages[intake.email?.status]||'Versandstatus wird geprüft.'),btn(intake.quote?'Offerte ansehen':'Rückfrage ansehen',()=>showOffer(recordId)));return box;
