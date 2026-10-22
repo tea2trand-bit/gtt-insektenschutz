@@ -63,13 +63,29 @@
     }catch(err){root.replaceChildren(e('h2',{},'Anfragen'),e('p',{class:'record-error'},err.message),btn('Erneut versuchen',load));}
   }
   async function open(id,target=''){try{selected=(await api('/'+id)).record;renderCard();if(target==='measurements'){await measurementCalculator(true);return;}root.scrollIntoView({block:'start'});$('.record-heading').focus({preventScroll:true});}catch(err){error(err);}}
+  const stageCount=s=>records.filter(r=>!s||recordStage(r)===s).length+(s==='Reklamationen'&&!archived?complaintCases.filter(c=>c.status!=='Erledigt').length:0);
+  function chooseStage(steps){
+    const trigger=$('#recordStagePicker');
+    const dialog=e('dialog',{class:'records record-stage-dialog','aria-labelledby':'recordStageTitle'});
+    const options=e('div',{class:'record-stage-options'});
+    const choices=archived?['',...steps]:steps;
+    for(const s of choices){
+      const active=s===filter;
+      options.append(e('button',{type:'button',class:'record-stage-option'+(active?' active':''),'aria-pressed':String(active),onclick:()=>{
+        filter=s;montageFilter='';inquiryFilter='';complaintFilter='active';dialog.close();renderList();
+      }},e('span',{},STATUS[s]||'Alle archivierten Anfragen'),e('strong',{},String(stageCount(s))),e('span',{'aria-hidden':'true',class:'record-stage-check'},active?'✓':'')));
+    }
+    dialog.append(e('div',{class:'record-head'},e('h2',{id:'recordStageTitle'},'Status auswählen'),btn('Schliessen',()=>dialog.close())),options);
+    dialog.addEventListener('click',ev=>{if(ev.target===dialog){const b=dialog.getBoundingClientRect();if(ev.clientX<b.left||ev.clientX>b.right||ev.clientY<b.top||ev.clientY>b.bottom)dialog.close();}});
+    dialog.addEventListener('close',()=>{dialog.remove();const current=$('#recordStagePicker');if(current){current.setAttribute('aria-expanded','false');current.focus({preventScroll:true});}});
+    root.append(dialog);trigger.setAttribute('aria-expanded','true');dialog.showModal();
+    options.querySelector('.active')?.focus();
+  }
   function renderList(){
     selected=null;
     root.replaceChildren(e('div',{class:'record-head'},e('div',{},e('h2',{},archived?'Archiv':'Anfragen'),e('p',{class:'record-note'},archived?'Archivierte Anfragen können jederzeit wiederhergestellt werden.':'Website-Anfragen und Offerten werden automatisch erfasst.')),e('div',{class:'record-actions'},...(archived?[]:[btn('Kunde hinzufügen',manual,'')]),btn('Aktualisieren',load))));
-    const counters=e('div',{class:'record-summary'});
     const steps=records.some(needsHistoricalReview)?['legacy_review',...STEPS]:STEPS;
-    steps.map(s=>[s,STATUS[s]]).forEach(([s,label])=>counters.append(e('button',{type:'button',class:s===filter?'active':'','aria-pressed':String(s===filter),onclick:()=>{filter=s;montageFilter='';inquiryFilter='';complaintFilter='active';renderList();}},e('span',{},label),e('strong',{class:'record-kpi-value'},String(records.filter(r=>recordStage(r)===s).length+(s==='Reklamationen'&&!archived?complaintCases.filter(c=>c.status!=='Erledigt').length:0))))));
-    root.append(e('div',{class:'record-stage-bar'},counters));
+    root.append(e('div',{class:'record-stage-bar'},e('button',{id:'recordStagePicker',type:'button',class:'btn ghost record-stage-picker','aria-haspopup':'dialog','aria-expanded':'false',onclick:()=>chooseStage(steps)},e('span',{},STATUS[filter]||'Alle archivierten Anfragen'),e('strong',{class:'record-stage-count'},String(stageCount(filter))),e('span',{'aria-hidden':'true',class:'record-stage-chevron'},'⌄'))));
     const filterOptions=e('div',{class:'record-filter-options'});
     root.append(e('div',{class:'record-filter-bar'},filterOptions,btn(archived?'← Aktive Anfragen':'Archiv',()=>{archived=!archived;filter=archived?'':'Novi upit';search='';load();})));
     if(filter==='legacy_review')root.append(e('p',{class:'record-note'},'Frühere Anfragen für Goran: prüfen und bereits erledigte Aufträge mit „Abschliessen“ nach „Abgeschlossen“ verschieben.'));
