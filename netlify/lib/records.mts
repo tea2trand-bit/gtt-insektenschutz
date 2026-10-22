@@ -65,7 +65,16 @@ export function applyChange(current: any, body: any, today = new Date().toLocale
     d.archivedAt='';d.restoredAt=new Date().toISOString();
   }else if(kind==='historical-complete'){
     d.status='Završeno';d.historicalClosedAt=new Date().toISOString();
+  }else if(kind==='cancel-order'||kind==='decision'&&body.status==='Odbijeno'&&['Prihvaćeno','Montaža'].includes(d.status)){
+    if(!['Prihvaćeno','Montaža'].includes(d.status))throw new RecordError('Nur angenommene Aufträge oder laufende Montagen können storniert werden.',409);
+    const reason=text(body.reason,2000);
+    d.orderCancellation={cancelledAt:new Date().toISOString(),previousStatus:d.status,previousDecisionDate:d.decisionDate,quoteVersion:d.intake?.version||null,reason};
+    d.status='Odbijeno';d.decisionDate=today;d.decisionReason=body.reason===undefined?(kind==='cancel-order'?'Auftrag nach Zusage storniert':d.decisionReason):reason;
+    if(d.appointmentAt&&d.appointmentStatus!=='cancelled'){
+      d.appointmentStatus='cancelled';d.appointmentCancelledAt=new Date().toISOString();d.appointmentCancelReason='Auftrag storniert';
+    }
   }else if(kind==='start-installation'||kind==='complete'){
+    if(d.orderCancellation&&!d.orderCancellation.reopenedAt)throw new RecordError('Dieser Auftrag wurde storniert.',409);
     if(!d.decisionDate||d.agreedPrice==null)throw new RecordError("Prvo zabeleži dogovor i cenu.");
     if(kind==='start-installation'){
       if(d.status!=='Prihvaćeno')throw new RecordError("Montaža počinje posle prihvatanja ponude.");
@@ -80,6 +89,7 @@ export function applyChange(current: any, body: any, today = new Date().toLocale
       const price=body.agreedPrice!==undefined?amount(body.agreedPrice):(d.quotedPrice??d.agreedPrice);
       if(price===null||price===undefined)throw new RecordError("Cena još nije zabeležena. Unesi dogovoreni iznos.");
       d.agreedPrice=price;
+      if(d.orderCancellation&&!d.orderCancellation.reopenedAt)d.orderCancellation.reopenedAt=new Date().toISOString();
     }
     d.status=body.status;
     d.decisionDate=today;
@@ -89,6 +99,7 @@ export function applyChange(current: any, body: any, today = new Date().toLocale
     }
   } else if (kind === "appointment") {
     if(!['Prihvaćeno','Montaža'].includes(d.status))throw new RecordError("Prvo zabeleži da je posao dogovoren.");
+    if(d.orderCancellation&&!d.orderCancellation.reopenedAt)throw new RecordError('Dieser Auftrag wurde storniert.',409);
     const at=date(body.date),time=text(body.time,5);
     if(!at||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))throw new RecordError("Izaberi datum i vreme montaže.");
     d.appointmentAt=at;d.appointmentTime=time;d.appointmentNote=text(body.note,2000);d.appointmentStatus='scheduled';
