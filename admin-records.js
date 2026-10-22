@@ -13,7 +13,7 @@
   const $=s=>root.querySelector(s);
   const e=(tag,attrs={},...children)=>{const n=document.createElement(tag);for(const[k,v]of Object.entries(attrs)){if(k.startsWith('on'))n.addEventListener(k.slice(2),v);else if(k==='class')n.className=v;else if(v!==false&&v!=null)n.setAttribute(k,v===true?'':v);}children.flat().forEach(c=>c!=null&&n.append(c));return n;};
   const btn=(label,fn,kind='ghost small')=>e('button',{type:'button',class:'btn '+kind,onclick:fn},label);
-  let records=[],complaintCases=[],offerSummary=null,selected=null,archived=false,filter='Novi upit',montageFilter='',inquiryFilter='',complaintFilter='active',search='',busy=false,deepLinkResolved=false;
+  let records=[],complaintCases=[],offerSummary=null,selected=null,archived=false,filter='Novi upit',montageFilter='',inquiryFilter='',complaintFilter='active',search='',busy=false,deepLinkResolved=false,billingAvailable=false;
   const hasAppointment=d=>!d.archivedAt&&d.appointmentAt&&d.appointmentTime&&d.appointmentStatus!=='cancelled'&&['Prihvaćeno','Montaža'].includes(d.status);
   const hasOpenComplaint=d=>(d.complaints||[]).some(c=>['Otvorena','U radu'].includes(c.status));
   const needsMeasurement=d=>canonical(d.status)==='Novi upit'&&!d.intake?.quote&&!(d.quotedPrice>0)&&!d.intake?.measurements?.length&&!d.intake?.manualReview;
@@ -54,7 +54,7 @@
   function error(err){const box=$('#recordError');if(box)box.textContent=err.message;else root.prepend(e('p',{class:'record-error',role:'alert'},err.message));}
   async function load(){
     try{
-      const [recordData,complaintData]=await Promise.all([api(archived?'?archived=1':''),api('',{complaint:true})]);records=recordData.records;offerSummary=recordData.offerSummary;complaintCases=complaintData.complaints;
+      const [recordData,complaintData]=await Promise.all([api(archived?'?archived=1':''),api('',{complaint:true})]);records=recordData.records;billingAvailable=recordData.billingAvailable===true;offerSummary=recordData.offerSummary;complaintCases=complaintData.complaints;
       if(filter==='legacy_review'&&!records.some(needsHistoricalReview))filter='Novi upit';
       if(!deepLinkResolved&&!archived&&records.some(needsHistoricalReview)&&!records.some(r=>recordStage(r)==='Novi upit'))filter='legacy_review';
       renderList();
@@ -265,7 +265,7 @@
       if(status==='Ponuda poslata')next.append(e('p',{class:'record-note'},'Die Offerte wurde versendet. Der Kunde kann sie über den Link in der E-Mail bestätigen.'));
       if(['Novi upit','Ponuda poslata','Prihvaćeno'].includes(status))next.append(btn('Ausmessen',()=>measurementCalculator(),''));
       if(status==='Prihvaćeno')next.append(btn(hasAppointment(d)?'Montagetermin ändern':'Montagetermin planen',schedule,''),btn('Montage beginnen',()=>mutate({action:'start-installation'}),'ghost'));
-      if(status==='Montaža')next.append(btn('Auftrag abschliessen',finishInstallation,''));
+      if(status==='Montaža')next.append(btn('Auftrag abschliessen',billingAvailable?finishInstallation:()=>mutate({action:'complete'}),''));
       if(next.childNodes.length)root.append(next);
       if(hasAppointment(d))root.append(e('p',{class:'record-appointment'},e('strong',{},'Montage: '+appointmentText(d)),d.appointmentNote?e('span',{},' · '+d.appointmentNote):null));
     }

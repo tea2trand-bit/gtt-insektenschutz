@@ -4,8 +4,10 @@ import {readFile,readdir,mkdir,writeFile} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {PGlite} from '@electric-sql/pglite';
 import {createRecord,fromSubmission,readRecord,changeRecord,deleteArchivedTestRecord} from '../netlify/lib/records.mts';
-import {completeWithInvoice,invoiceSnapshot,invoicePDF,invoiceForRecord,deliverInvoice,confirmInvoicePayment} from '../netlify/lib/invoices.mts';
+import {completeWithInvoice,invoiceSnapshot,invoicePDF,invoiceForRecord,deliverInvoice,confirmInvoicePayment,directBillingAvailable} from '../netlify/lib/invoices.mts';
 import {invoiceQRData} from '../netlify/lib/invoice-pdf.mts';
+import {renderInvoicePDF} from '../netlify/lib/invoice-pdf.mts';
+import {PDFDocument} from 'pdf-lib';
 const local={deploy:{context:'dev'}},prod={deploy:{context:'production'}};
 async function setup(t,options={}){
  const db=await PGlite.create();t.after(()=>db.close());
@@ -22,11 +24,16 @@ test('bank invoice completes montage atomically, uses approved gross price and d
  const before=await readRecord(db,input.id),result=await completeWithInvoice(db,input.id,body,local),s=result.invoice.snapshot;
  assert.equal(result.record.document.status,'Završeno');assert.match(s.number,/^GTT-R-\d{4}-\d{5}$/);assert.equal(s.netCHF,190);assert.equal(s.vatCHF,15.39);assert.equal(s.totalCHF,205.39);assert.equal(s.prepaidCHF,50);assert.equal(s.balanceCHF,155.39);assert.equal(s.paid,false);assert.equal(result.invoice.delivery_status,'preview_only');
  assert.deepEqual(invoiceQRData(s).amount,155.39);assert.equal(invoiceQRData(s).creditor.account,'CH7380808007449561057');assert.equal(invoiceQRData(s).reference,undefined);
- const pdf=await invoicePDF(db,result.invoice.id);assert.equal(pdf.subarray(0,4).toString(),'%PDF');assert.deepEqual(await invoicePDF(db,result.invoice.id),pdf);
+ const pdf=await invoicePDF(db,result.invoice.id);assert.equal(pdf.subarray(0,4).toString(),'%PDF');assert.deepEqual(await invoicePDF(db,result.invoice.id),pdf);assert.equal((await PDFDocument.load(pdf)).getPageCount(),1);
  const again=await completeWithInvoice(db,input.id,body,local);assert.equal(again.record.revision,result.record.revision);assert.equal(again.invoice.id,result.invoice.id);assert.equal((await db.query('SELECT count(*)::int AS n FROM gtt_invoices')).rows[0].n,1);assert.equal(result.record.history.filter(h=>h.kind==='invoice_created').length,1);assert.deepEqual(result.record.original,before.original);
  await assert.rejects(completeWithInvoice(db,input.id,{...body,requestId:randomUUID(),method:'cash'},local),/bereits eine Rechnung/);
  await db.query("UPDATE gtt_records SET document=jsonb_set(document,'{name}','\"Geänderter Kontakt\"') WHERE id=$1",[input.id]);assert.deepEqual(await invoicePDF(db,result.invoice.id),pdf);assert.equal((await invoiceForRecord(db,input.id)).snapshot.customer.name,'Beispiel Kunde');
  await mkdir('test-results/pdf',{recursive:true});await writeFile('test-results/pdf/invoice-bank-preview.pdf',pdf);
+});
+test('long invoice addresses flow without overlapping the service summary and keep the QR on an A4 page',async t=>{
+ const {db,input,snapshot}=await setup(t,{company:'Beispiel Gesellschaft '.repeat(9),name:'Beispiel Name '.repeat(14),address:'Sehr lange Hausadresse mit zusaetzlichen Angaben '.repeat(10)});
+ const s={...invoiceSnapshot(await readRecord(db,input.id),snapshot,'bank'),number:'MUSTER-GTT-R-2026-00001',preview:true};
+ const bytes=await renderInvoicePDF(s),pdf=await PDFDocument.load(bytes);assert.equal(pdf.getPageCount(),2);for(const page of pdf.getPages()){assert.ok(Math.abs(page.getWidth()-595.28)<1);assert.ok(Math.abs(page.getHeight()-841.89)<1);}await writeFile('test-results/pdf/invoice-long-preview.pdf',bytes);
 });
 test('cash and TWINT require explicit receipt, add only outstanding balance and produce paid receipts without duplicate payment',async t=>{
  for(const method of ['cash','twint']){
@@ -70,4 +77,10 @@ test('bank receipt is explicit and repeat safe; issued financial records cannot 
  await assert.rejects(changeRecord(db,input.id,{revision:paid.record.revision,action:'update',patch:{invoiceAmount:1}}),/nicht überschrieben/);
  await assert.rejects(changeRecord(db,input.id,{revision:paid.record.revision,action:'payment',amount:1,date:'2026-10-22'}),/Rechnungsaktionen/);
  await assert.rejects(deleteArchivedTestRecord(db,input.id,paid.record.revision),/erhalten/);
+});
+test('unconfirmed production account blocks invoice issuance while keeping the existing completion workflow available',async t=>{
+ const {db,input,body}=await setup(t);assert.equal(directBillingAvailable(prod),false);assert.equal(directBillingAvailable(local),true);
+ await assert.rejects(completeWithInvoice(db,input.id,body,prod),/Empfängerkonto/);assert.equal((await readRecord(db,input.id)).revision,1);
+ const old=process.env.GTT_RUNTIME_CONTEXT;process.env.GTT_RUNTIME_CONTEXT='production';try{assert.equal(directBillingAvailable({}),false);await assert.rejects(completeWithInvoice(db,input.id,body,{}),/Empfängerkonto/);}finally{old===undefined?delete process.env.GTT_RUNTIME_CONTEXT:process.env.GTT_RUNTIME_CONTEXT=old;}
+ const closed=await changeRecord(db,input.id,{revision:1,action:'complete'});assert.equal(closed.document.status,'Završeno');assert.equal(await invoiceForRecord(db,input.id),null);
 });

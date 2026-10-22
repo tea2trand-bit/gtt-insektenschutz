@@ -17,6 +17,6 @@ Stand: 22.10.2026. Smallinvoice wird fuer diesen Ablauf nicht verwendet.
 
 ## Empfaengerkonto noch zu bestaetigen
 
-Die gelieferte PDF-Rechnung nennt GT Trading GmbH / Raiffeisen; die gelieferte QR-Grafik nennt einen anderen Kontoinhaber. invoice-settings.mts enthaelt die Firmendaten aus der PDF-Vorlage. INVOICE_ACCOUNT_CONFIRMED=false blockiert die echte Ausstellung, bis der Auftraggeber das Zielkonto bestaetigt. Es wird kein statischer fremder QR-Code wiederverwendet.
+Die gelieferte PDF-Rechnung nennt GT Trading GmbH / Raiffeisen; die gelieferte QR-Grafik nennt einen anderen Kontoinhaber. invoice-settings.mts enthaelt die Firmendaten aus der PDF-Vorlage. INVOICE_ACCOUNT_CONFIRMED=false blockiert die echte Ausstellung, bis der Auftraggeber das Zielkonto bestaetigt. Es wird kein statischer fremder QR-Code wiederverwendet. Solange die Bestaetigung fehlt, bleibt der bisherige Montageabschluss in Produktion verfuegbar; die neuen Zahlungsoptionen sind nur lokal und im Deploy Preview aktiv. Die E-Mail-Vereinfachung kann unabhaengig davon veroefentlicht werden.
 
 Die Zahlungsfrist von 10 Tagen und die MwSt.-Nummer stammen ebenfalls aus der gelieferten Firmenvorlage. Einfache Rechnungen werden auf einer A4-Seite mit normgerechtem QR-Zahlteil erstellt. Unvollstaendig strukturierte Kundenadressen werden nicht fuer den QR erfunden; dessen Zahlbar-durch-Feld bleibt dann leer.

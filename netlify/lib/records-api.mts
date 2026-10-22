@@ -5,7 +5,7 @@ import {calculateMeasuredOffer,refreshDraftContact} from './admin-measurements.m
 import {readRequestMeasurements} from './request-measurements.mts';
 import type {Offer} from './projects-store.mts';
 import {quotePDFResponse} from './quote-pdf.mts';
-import {completeWithInvoice,confirmInvoicePayment,invoiceForRecord,invoicePDF,deliverInvoice} from './invoices.mts';
+import {completeWithInvoice,confirmInvoicePayment,invoiceForRecord,invoicePDF,deliverInvoice,directBillingAvailable} from './invoices.mts';
 const reply = (data:unknown,status=200) => Response.json(data,{status,headers:{"Cache-Control":"no-store", "X-Content-Type-Options":"nosniff"}});
 export async function recordsAPI(req: Request, db: QueryDB, path: string[], options:{offer?:Offer;context?:any}={}) {
   const id = path[0];
@@ -60,7 +60,7 @@ export async function recordsAPI(req: Request, db: QueryDB, path: string[], opti
       FROM gtt_records WHERE COALESCE(document->>'isTest','false')<>'true' AND COALESCE(document->>'archivedAt','')=''
     ) SELECT COALESCE(sum(amount),0)::text AS total,count(amount)::int AS count FROM offer_amounts WHERE amount>=0`);
     const offerSummary={total:Number(summary.rows[0].total),count:summary.rows[0].count};
-    return reply({offerSummary,records:rows.map(({offer_versions,...record})=>({...record,offerReferences:offer_versions.flatMap((version:string)=>[offerNumber(record.id,Number(version)),legacyOfferNumber(record.id,Number(version))])}))});
+    return reply({billingAvailable:directBillingAvailable(options.context),offerSummary,records:rows.map(({offer_versions,...record})=>({...record,offerReferences:offer_versions.flatMap((version:string)=>[offerNumber(record.id,Number(version)),legacyOfferNumber(record.id,Number(version))])}))});
   }
   if (id === "import" && method === "POST") {
     const body:any = await req.json();

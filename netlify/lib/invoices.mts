@@ -3,9 +3,11 @@ import {RecordError,readRecord,type QueryDB} from './records.mts';
 import {offerNumber,money} from './quote-email.mts';
 import {INVOICE_ISSUER,INVOICE_ACCOUNT_CONFIRMED} from './invoice-settings.mts';
 import {renderInvoicePDF} from './invoice-pdf.mts';
+import {deploymentContext} from './quote-intake.mts';
 const env=(key:string)=>(globalThis as any).Netlify?.env?.get(key)??process.env[key];
 const cents=(n:number)=>Math.round(n*100);
 const escape=(s:unknown)=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
+export const directBillingAvailable=(context:any)=>deploymentContext(context)==='production'?INVOICE_ACCOUNT_CONFIRMED:['dev','local','deploy-preview','branch-deploy'].includes(deploymentContext(context));
 export function invoiceSnapshot(record:any,approved:any,method:string,now=new Date()){
  const d=record.document,q=approved.quote;
  if(!['bank','cash','twint'].includes(method))throw new RecordError('Bitte Rechnung, Bar oder TWINT auswählen.');
@@ -40,7 +42,7 @@ export async function invoicePDF(db:QueryDB,id:string){
  return saved.rows[0]?Buffer.from(saved.rows[0].pdf):Buffer.from((await db.query('SELECT pdf FROM gtt_invoices WHERE id=$1',[id])).rows[0].pdf);
 }
 export async function deliverInvoice(db:QueryDB,id:string,context:any={},options:{fetch?:typeof fetch}={}){
- if(context?.deploy?.context!=='production'||!env('RESEND_API_KEY'))return;
+ if(deploymentContext(context)!=='production'||!env('RESEND_API_KEY'))return;
  const pdf=await invoicePDF(db,id);
  const reserved=await db.query(`UPDATE gtt_invoice_outbox SET status='processing',attempts=attempts+1,lease_until=now()+interval '1 minute',updated_at=now() WHERE invoice_id=$1 AND attempts<3 AND created_at>now()-interval '23 hours' AND (status IN ('queued','failed','unknown') OR (status='processing' AND lease_until<now())) RETURNING *`,[id]);
  const job=reserved.rows[0];if(!job)return;
@@ -54,6 +56,7 @@ export async function deliverInvoice(db:QueryDB,id:string,context:any={},options
  await db.query('UPDATE gtt_invoice_outbox SET status=$3,provider_id=$4,error_code=$5,lease_until=NULL,updated_at=now() WHERE invoice_id=$1 AND attempts=$2',[id,job.attempts,status,provider,code]);
 }
 export async function completeWithInvoice(db:QueryDB,recordId:string,body:any,context:any={},options:{fetch?:typeof fetch;accountConfirmed?:boolean}={}){
+ if(deploymentContext(context)==='unknown')throw new RecordError('Die Systemumgebung ist nicht konfiguriert. Bitte den Support kontaktieren.',503);
  if(!/^[a-f0-9-]{36}$/i.test(body.requestId||''))throw new RecordError('Bitte den Montageabschluss erneut öffnen.');
  const existing=(await db.query('SELECT id,request_id,method FROM gtt_invoices WHERE record_id=$1',[recordId])).rows[0];
  if(existing){
@@ -64,12 +67,12 @@ export async function completeWithInvoice(db:QueryDB,recordId:string,body:any,co
  const record=await readRecord(db,recordId),d=record.document;
  if(!Number.isInteger(body.revision)||record.revision!==body.revision)throw new RecordError('Die Anfrage wurde geändert. Bitte neu öffnen.',409);
  if(body.method!=='bank'&&body.paymentReceived!==true)throw new RecordError('Bitte den erhaltenen Bar- oder TWINT-Betrag ausdrücklich bestätigen.');
- if(context?.deploy?.context==='production'&&!(options.accountConfirmed??INVOICE_ACCOUNT_CONFIRMED))throw new RecordError('Das Empfängerkonto für Rechnungen muss zuerst bestätigt werden.',409);
+ if(deploymentContext(context)==='production'&&!(options.accountConfirmed??INVOICE_ACCOUNT_CONFIRMED))throw new RecordError('Das Empfängerkonto für Rechnungen muss zuerst bestätigt werden.',409);
  const approved=(await db.query('SELECT snapshot FROM gtt_quote_versions WHERE record_id=$1 AND version=$2',[recordId,d.intake?.version||0])).rows[0]?.snapshot;
- const snapshot={...invoiceSnapshot(record,approved||{},body.method),preview:context?.deploy?.context!=='production'||d.isTest===true},invoiceId=randomUUID();
+ const snapshot={...invoiceSnapshot(record,approved||{},body.method),preview:deploymentContext(context)!=='production'||d.isTest===true},invoiceId=randomUUID();
  const payment=body.method!=='bank'&&snapshot.balanceCHF>0?[{id:invoiceId,amount:snapshot.balanceCHF,date:snapshot.date,note:body.method==='cash'?'Barzahlung bei Montageabschluss bestätigt':'TWINT-Zahlung bei Montageabschluss bestätigt'}]:[];
  const next={...d,status:'Završeno',installedAt:snapshot.date,payments:[...(d.payments||[]),...payment]};
- const delivery=context?.deploy?.context==='production'&&!d.isTest?'queued':'preview_only';
+ const delivery=deploymentContext(context)==='production'&&!d.isTest?'queued':'preview_only';
  const {rows}=await db.query(`WITH target AS MATERIALIZED (
   SELECT id FROM gtt_records WHERE id=$1 AND revision=$2 AND document->>'status'='Montaža' AND COALESCE(document->>'archivedAt','')='' FOR UPDATE
  ), numbered AS (
@@ -102,7 +105,7 @@ export async function confirmInvoicePayment(db:QueryDB,recordId:string,body:any)
  return {record:await readRecord(db,recordId),invoice};
 }
 export async function dispatchPendingInvoices(db:QueryDB,context:any={},options:{fetch?:typeof fetch}={}){
- if(context?.deploy?.context!=='production'||!env('RESEND_API_KEY'))return;
+ if(deploymentContext(context)!=='production'||!env('RESEND_API_KEY'))return;
  const {rows}=await db.query("SELECT invoice_id FROM gtt_invoice_outbox WHERE status IN ('queued','failed','unknown','processing') AND attempts<3 AND created_at>now()-interval '23 hours' AND (lease_until IS NULL OR lease_until<now()) ORDER BY created_at LIMIT 5");
  for(const job of rows){try{await deliverInvoice(db,job.invoice_id,context,options);}catch{console.error('Invoice delivery preparation failed');}}
 }

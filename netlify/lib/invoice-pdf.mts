@@ -21,25 +21,31 @@ export async function renderInvoicePDF(s:any):Promise<Buffer>{
  text(s.issuer.email+' · '+s.issuer.phone,42,99,510,9,muted);
  doc.moveTo(42,124).lineTo(553,124).strokeColor('#ceddca').stroke();
  const c=s.customer;
- text([c.company,c.name,c.address,c.postalCode].filter(Boolean).join('\n'),42,140,290,10);
- text('Rechnung '+s.number,350,140,203,13,green);text('Datum: '+date(s.date)+'\nLeistung: '+date(s.serviceDate)+'\nOfferte: '+s.offerReference,350,164,203,9);
- text('Insektenschutz nach Mass',42,234,510,13);
- text('Gemäss bestätigter Offerte, inklusive Ausmessen, Lieferung und Montage.',42,257,510,9,muted);
+ const customerLines=[c.company,c.name,c.address,c.postalCode].filter(Boolean).join('\n');
+ text(customerLines,42,140,290,10);
+ const metaY=140+doc.fontSize(13).heightOfString('Rechnung '+s.number,{width:203,lineGap:2})+9;
+ const bodyY=Math.max(234,140+doc.fontSize(10).heightOfString(customerLines,{width:290,lineGap:2})+28,metaY+65);
+ text('Rechnung '+s.number,350,140,203,13,green);text('Datum: '+date(s.date)+'\nLeistung: '+date(s.serviceDate)+'\nOfferte: '+s.offerReference,350,metaY,203,9);
+ text('Insektenschutz nach Mass',42,bodyY,510,13);
+ text('Gemäss bestätigter Offerte, inklusive Ausmessen, Lieferung und Montage.',42,bodyY+23,510,9,muted);
  const a=s.quote.areas;
- text([a.fenster?'Fenster: '+a.fenster+' m²':'',a.tueren?'Türen / Plissee: '+a.tueren+' m²':''].filter(Boolean).join(' · '),42,277,510,10);
- doc.rect(42,307,511,30).fill('#edf4e9');text('Gesamtbetrag inkl. '+s.issuer.vatRate+' % MwSt.',53,315,330,11);text(money(s.totalCHF),394,315,148,11);
- text('Nettobetrag: '+money(s.netCHF)+' · Enthaltene MwSt.: '+money(s.vatCHF),42,348,510,9,muted);
- if(s.prepaidCHF)text('Bereits bezahlt: '+money(s.prepaidCHF),42,371,510,10);
+ text([a.fenster?'Fenster: '+a.fenster+' m²':'',a.tueren?'Türen / Plissee: '+a.tueren+' m²':''].filter(Boolean).join(' · '),42,bodyY+43,510,10);
+ doc.rect(42,bodyY+73,511,30).fill('#edf4e9');text('Gesamtbetrag inkl. '+s.issuer.vatRate+' % MwSt.',53,bodyY+81,330,11);text(money(s.totalCHF),394,bodyY+81,148,11);
+ text('Nettobetrag: '+money(s.netCHF)+' · Enthaltene MwSt.: '+money(s.vatCHF),42,bodyY+114,510,9,muted);
+ if(s.prepaidCHF)text('Bereits bezahlt: '+money(s.prepaidCHF),42,bodyY+137,510,10);
  if(s.paid){
-  text('BEZAHLT · '+(s.method==='cash'?'Bar':s.method==='twint'?'TWINT':'Bereits vollständig bezahlt'),42,400,510,14,green);
-  text('Zahlungseingang bestätigt am '+date(s.date)+'. Kein offener Betrag.',42,429,510,10);
+  text('BEZAHLT · '+(s.method==='cash'?'Bar':s.method==='twint'?'TWINT':'Bereits vollständig bezahlt'),42,bodyY+166,510,14,green);
+  text('Zahlungseingang bestätigt am '+date(s.date)+'. Kein offener Betrag.',42,bodyY+195,510,10);
  }else{
-  text('Noch zu bezahlen: '+money(s.balanceCHF),42,400,510,13,green);
-  text('Zahlbar bis '+date(s.dueDate)+' mit dem QR-Zahlteil unten.',42,425,510,10);
-  text(s.issuer.bank+' · BIC '+s.issuer.bic,42,447,510,9,muted);
+  text('Noch zu bezahlen: '+money(s.balanceCHF),42,bodyY+166,510,13,green);
+  text('Zahlbar bis '+date(s.dueDate)+' mit dem QR-Zahlteil unten.',42,bodyY+191,510,10);
+  text(s.issuer.bank+' · BIC '+s.issuer.bic,42,bodyY+213,510,9,muted);
  }
- if(s.preview)text('MUSTER - Keine Zahlungsaufforderung. Nicht an Kunden versendet.',42,465,510,9,green);
- text('MwSt.-Nr. '+s.issuer.vatId+' · Bitte bei Rückfragen die Rechnungsnummer angeben.',42,483,510,8,muted);
- if(!s.paid)new SwissQRBill(invoiceQRData(s),{language:'DE',scissors:true}).attachTo(doc);
+ if(s.preview)text('MUSTER - Keine Zahlungsaufforderung. Nicht an Kunden versendet.',42,bodyY+231,510,9,green);
+ text('MwSt.-Nr. '+s.issuer.vatId+' · Bitte bei Rückfragen die Rechnungsnummer angeben.',42,bodyY+249,510,8,muted);
+ if(!s.paid){
+  if(doc.y+SwissQRBill.height>doc.page.height){doc.addPage({size:'A4'});text('QR-Zahlteil zur Rechnung '+s.number,42,42,510,14,green);}
+  doc.fillColor('#000000');new SwissQRBill(invoiceQRData(s),{language:'DE',scissors:true}).attachTo(doc);
+ }
  doc.end();return result;
 }

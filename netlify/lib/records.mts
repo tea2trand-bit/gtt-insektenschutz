@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import {INVOICE_ACCOUNT_CONFIRMED} from './invoice-settings.mts';
 
 export const STATUSES = ["Novi upit", "Ponuda poslata", "Čeka odgovor", "Prihvaćeno", "Odbijeno", "Montaža", "Završeno"];
 export class RecordError extends Error {
@@ -54,7 +55,7 @@ export function applyChange(current: any, body: any, today = new Date().toLocale
     if(!['update','archive','restore','complaint'].includes(kind))throw new RecordError('Für diesen Auftrag existiert bereits eine Rechnung. Bitte die Rechnungsaktionen verwenden.',409);
     if(kind==='update'&&Object.keys(body.patch||{}).some(k=>!['name','company','email','phone','channel','address','postalCode','notes','workNotes'].includes(k)))throw new RecordError('Die ausgestellte Rechnung und ihr Betrag können nicht überschrieben werden.',409);
   }
-  if(kind==='complete'&&d.intake?.quote)throw new RecordError('Bitte den Auftrag mit der Zahlungsart Rechnung, Bar oder TWINT abschliessen.');
+  if(kind==='complete'&&d.intake?.quote&&INVOICE_ACCOUNT_CONFIRMED)throw new RecordError('Bitte den Auftrag mit der Zahlungsart Rechnung, Bar oder TWINT abschliessen.');
   if(d.archivedAt&&!['archive','restore'].includes(kind))throw new RecordError("Upit je uklonjen iz aktivne evidencije. Prvo ga vrati iz arhive.",409);
   if(kind==='archive'){
     if(d.archivedAt)throw new RecordError("Upit je već u arhivi.",409);
