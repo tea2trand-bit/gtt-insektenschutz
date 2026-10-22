@@ -26,6 +26,13 @@ header.top .wrap{display:flex;align-items:center;justify-content:space-between;p
 .btn.ghost{background:#fff;color:var(--dark);border:1px solid var(--fieldline);font-weight:500}
 .btn.small{padding:7px 12px;font-size:13px;border-radius:8px}
 .btn.danger{background:#fff;color:var(--red);border:1px solid #f1d2cd;font-weight:500}
+.project-upload>summary{display:inline-flex;align-items:center;gap:8px;padding:9px 14px;background:#edf5e8;border:1px solid #cbdcbe;border-radius:8px;color:#426e32;font-weight:600;cursor:pointer;list-style:none}
+.project-upload>summary::before{content:'+';font-size:20px;line-height:1}
+.project-upload[open]>summary::before{content:'−'}
+.project-upload>summary::-webkit-details-marker{display:none}
+.project-upload-body{margin-top:16px}
+.project-upload-help{margin:10px 0;color:var(--muted);font-size:13px}
+.project-upload-help>summary{cursor:pointer}
 .card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:22px;margin-bottom:22px}
 h1{font-size:24px;margin:0 0 4px;font-weight:600}
 h2{font-size:18px;margin:0 0 14px;color:var(--green);font-weight:600}
@@ -161,22 +168,29 @@ input::placeholder{color:#a3aba5}
     </section>
 
     <section class="card" data-admin-panel="projects" hidden>
-      <h2>Neue Projekte hinzufügen</h2>
+      <details class="project-upload">
+      <summary>Projekt hinzufügen</summary>
+      <div class="project-upload-body">
       <label class="drop" id="drop">
         <strong>Bilder oder Videos hierher ziehen</strong>
         <span class="muted">oder Dateien auswählen (Mehrfachauswahl möglich)</span>
         <input id="fileInput" type="file" accept="image/*,video/mp4,video/quicktime,video/webm" multiple hidden>
       </label>
+      <details class="project-upload-help">
+      <summary>Hilfe zum Hochladen</summary>
       <ul class="tips">
         <li>Bilder werden vor dem Hochladen automatisch verkleinert und optimiert.</li>
         <li>Video: bevorzugt MP4 (H.264), bis 500 MB. Auf dem iPhone: Einstellungen → Kamera → Formate → «Maximale Kompatibilität».</li>
         <li>Titel und Beschreibung erscheinen auf der Website (z. B. «Plissee-Tür St. Gallen»).</li>
       </ul>
+      </details>
       <div class="queue" id="queue"></div>
       <div style="margin-top:14px;display:flex;gap:10px;align-items:center" id="queueActions" hidden>
         <button class="btn" id="uploadBtn">Auf Website veröffentlichen</button>
         <button class="btn ghost" id="clearBtn">Liste leeren</button>
       </div>
+      </div>
+      </details>
     </section>
 
     <section class="card" data-admin-panel="projects" hidden>
