@@ -13,7 +13,7 @@
   const $=s=>root.querySelector(s);
   const e=(tag,attrs={},...children)=>{const n=document.createElement(tag);for(const[k,v]of Object.entries(attrs)){if(k.startsWith('on'))n.addEventListener(k.slice(2),v);else if(k==='class')n.className=v;else if(v!==false&&v!=null)n.setAttribute(k,v===true?'':v);}children.flat().forEach(c=>c!=null&&n.append(c));return n;};
   const btn=(label,fn,kind='ghost small')=>e('button',{type:'button',class:'btn '+kind,onclick:fn},label);
-  let records=[],complaintCases=[],offerSummary=null,selected=null,archived=false,filter='Novi upit',montageFilter='',inquiryFilter='',complaintFilter='active',search='',busy=false,deepLinkResolved=false,billingAvailable=false;
+  let records=[],complaintCases=[],offerSummary=null,selected=null,archived=false,filter='Novi upit',montageFilter='',inquiryFilter='',complaintFilter='active',search='',busy=false,deepLinkResolved=false,billingAvailable=false,bankBillingAvailable=false;
   const hasAppointment=d=>!d.archivedAt&&d.appointmentAt&&d.appointmentTime&&d.appointmentStatus!=='cancelled'&&['Prihvaćeno','Montaža'].includes(d.status);
   const hasOpenComplaint=d=>(d.complaints||[]).some(c=>['Otvorena','U radu'].includes(c.status));
   const needsMeasurement=d=>canonical(d.status)==='Novi upit'&&!d.intake?.quote&&!(d.quotedPrice>0)&&!d.intake?.measurements?.length&&!d.intake?.manualReview;
@@ -55,7 +55,7 @@
   function error(err){const box=$('#recordError');if(box)box.textContent=err.message;else root.prepend(e('p',{class:'record-error',role:'alert'},err.message));}
   async function load(){
     try{
-      const [recordData,complaintData]=await Promise.all([api(archived?'?archived=1':''),api('',{complaint:true})]);records=recordData.records;billingAvailable=recordData.billingAvailable===true;offerSummary=recordData.offerSummary;complaintCases=complaintData.complaints;
+      const [recordData,complaintData]=await Promise.all([api(archived?'?archived=1':''),api('',{complaint:true})]);records=recordData.records;billingAvailable=recordData.billingAvailable===true;bankBillingAvailable=recordData.bankBillingAvailable===true;offerSummary=recordData.offerSummary;complaintCases=complaintData.complaints;
       if(filter==='legacy_review'&&!records.some(needsHistoricalReview))filter='Novi upit';
       if(!deepLinkResolved&&!archived&&records.some(needsHistoricalReview)&&!records.some(r=>recordStage(r)==='Novi upit'))filter='legacy_review';
       renderList();
@@ -269,8 +269,8 @@
       if(status==='Ponuda poslata')next.append(e('p',{class:'record-note'},'Die Offerte wurde versendet. Der Kunde kann sie über den Link in der E-Mail bestätigen.'));
       if(['Novi upit','Ponuda poslata','Prihvaćeno'].includes(status))next.append(btn('Ausmessen',()=>measurementCalculator(),''));
       if(status==='Prihvaćeno')next.append(btn(hasAppointment(d)?'Montagetermin ändern':'Montagetermin planen',schedule,''),btn('Montage beginnen',()=>mutate({action:'start-installation'}),'ghost'));
-      if(['Prihvaćeno','Montaža'].includes(status)&&!d.billing)next.append(btn('Auftrag stornieren',cancelOrder,'ghost'));
-      if(status==='Montaža')next.append(btn('Auftrag abschliessen',billingAvailable?finishInstallation:()=>mutate({action:'complete'}),''));
+      if(status==='Prihvaćeno'&&!d.billing)next.append(btn('Auftrag stornieren',cancelOrder,'ghost'));
+      if(status==='Montaža')next.append(btn('Montage abschliessen',billingAvailable&&d.intake?.quote?finishInstallation:()=>mutate({action:'complete'}),''));
       if(next.childNodes.length)root.append(next);
       if(hasAppointment(d))root.append(e('p',{class:'record-appointment'},e('strong',{},'Montage: '+appointmentText(d)),d.appointmentNote?e('span',{},' · '+d.appointmentNote):null));
     }
@@ -281,7 +281,8 @@
       form.append(input('Notiz zum Auftrag','notes','textarea',d.notes),e('p',{},e('button',{type:'submit',class:'btn small'},'Notiz speichern')));notes.append(form);root.append(notes);
       const decisions=e('div',{class:'record-actions'},btn(orderCancelled(d)?'Auftrag wieder aufnehmen':'Zusage manuell erfassen',()=>decision('Prihvaćeno')),...(['Prihvaćeno','Montaža'].includes(status)?[]:[btn('Absage erfassen',()=>decision('Odbijeno'))]));
       if(hasAppointment(d))decisions.append(btn('Montagetermin absagen',()=>mutate({action:'cancel-appointment'})));
-      root.append(e('details',{class:'record-extra'},e('summary',{},'Telefonische Zu- / Absage'),decisions),e('details',{class:'record-extra'},e('summary',{},'Dokumente und Fotos'),files()),e('details',{class:'record-extra'},e('summary',{},'Reklamation zum Auftrag'),complaints()));
+      if(!['Montaža','Završeno'].includes(status))root.append(e('details',{class:'record-extra'},e('summary',{},'Telefonische Zu- / Absage'),decisions));
+      root.append(e('details',{class:'record-extra'},e('summary',{},'Dokumente und Fotos'),files()),e('details',{class:'record-extra'},e('summary',{},'Reklamation zum Auftrag'),complaints()));
       const contact=e('details',{class:'record-extra',id:'recordContact'},e('summary',{},'Kontakt korrigieren'));
       const correction=e('form',{id:'contactForm',oninput:()=>correction.dataset.dirty='true',onsubmit:async ev=>{ev.preventDefault();await mutate({action:'update',patch:Object.fromEntries(new FormData(correction))});}}),fields=e('div',{class:'record-fields'});
       for(const [label,key,type]of [['Name','name'],['Firma','company'],['E-Mail','email','email'],['Telefon','phone','tel'],['Montageadresse','address'],['PLZ / Ort','postalCode']])fields.append(input(label,key,type||'text',d[key]));
@@ -291,7 +292,7 @@
   function cancelOrder(){
     if(hasDirtyForm()){error(Error('Bitte zuerst Ihre Änderungen speichern.'));return;}
     const form=e('form',{class:'record-appointment'});
-    form.append(e('h3',{},'Auftrag stornieren'),e('p',{},'Der Auftrag wechselt nach Abgelehnt und verschwindet aus Angenommen und Montage. Ein geplanter Montagetermin wird aufgehoben. Bisherige Angaben bleiben gespeichert.'),input('Grund (optional)','reason','text',''),e('button',{type:'submit',class:'btn'},'Stornierung bestätigen'),btn('Abbrechen',()=>form.remove()));
+    form.append(e('h3',{},'Auftrag stornieren'),e('p',{},'Der Auftrag wechselt von Angenommen nach Abgelehnt. Ein geplanter Montagetermin wird aufgehoben. Bisherige Angaben bleiben gespeichert.'),input('Grund (optional)','reason','text',''),e('button',{type:'submit',class:'btn'},'Stornierung bestätigen'),btn('Abbrechen',()=>form.remove()));
     if((selected.document.payments||[]).length)form.append(e('p',{class:'record-note'},'Bereits erfasste Zahlungen bleiben erhalten. Eine Rückzahlung wird nicht ausgelöst.'));
     form.addEventListener('submit',async ev=>{ev.preventDefault();await mutate({action:'cancel-order',reason:new FormData(form).get('reason')});});$('#inlineAction').replaceChildren(form);form.scrollIntoView({block:'center',behavior:'smooth'});
   }
@@ -316,10 +317,15 @@
   function finishInstallation(){
     if(hasDirtyForm()){error(Error('Bitte zuerst Ihre Änderungen speichern.'));return;}
     const d=selected.document,total=d.agreedPrice,paid=(d.payments||[]).reduce((n,p)=>n+Number(p.amount),0),remaining=Math.round((total-paid)*100)/100,requestId=crypto.randomUUID();
-    const form=e('form',{class:'record-appointment'}),method=e('select',{'aria-label':'Zahlungsart'},e('option',{value:'bank'},'Rechnung / Banküberweisung'),e('option',{value:'cash'},'Bar'),e('option',{value:'twint'},'TWINT')),received=e('input',{type:'checkbox'}),confirmation=e('label',{},received,' Ich bestätige: '+money(remaining)+' wurde erhalten.'),submit=e('button',{type:'submit',class:'btn'},'Rechnung erstellen und senden');
-    const change=()=>{confirmation.hidden=method.value==='bank';received.required=method.value!=='bank';submit.textContent=method.value==='bank'?'Rechnung erstellen und senden':'Zahlung bestätigen und Rechnung senden';};method.addEventListener('change',change);change();
-    form.append(e('h3',{},'Montage abschliessen'),e('p',{},'Bestätigte Offerte: '+money(total)+(paid?' · Bereits bezahlt: '+money(paid):'')),e('p',{},'Offen: '+money(remaining)),e('label',{},'Zahlungsart',method),confirmation,e('p',{class:'record-note'},'Die Rechnung wird als PDF an '+d.email+' gesendet. Der Auftrag wechselt nach Abgeschlossen.'),submit,btn('Abbrechen',()=>form.remove()));
-    form.addEventListener('submit',ev=>{ev.preventDefault();invoiceAction('/complete-invoice',{requestId,method:method.value,paymentReceived:received.checked},'✓ Montage abgeschlossen und Rechnung erstellt.');});$('#inlineAction').replaceChildren(form);form.scrollIntoView({block:'center',behavior:'smooth'});
+    let method='';const bankReady=bankBillingAvailable||d.isTest===true;
+    const form=e('form',{class:'record-appointment record-payment-card'}),choices=e('fieldset',{class:'record-payment-options'},e('legend',{},'Wie bezahlt der Kunde?')),received=e('input',{type:'checkbox'}),confirmation=e('label',{class:'record-payment-received',hidden:true},received,' Ich bestätige: '+money(remaining)+' wurde erhalten.'),accountNote=e('p',{class:'record-note',hidden:true},'Das Bankkonto für Rechnungen wird noch bestätigt. Bar und TWINT sind bereits verfügbar.'),submit=e('button',{type:'submit',class:'btn',disabled:true},'Montage abschliessen');
+    for(const [value,label]of [['bank','Rechnung'],['twint','TWINT'],['cash','Barzahlung']]){
+      const radio=e('input',{type:'radio',name:'paymentMethod',value,required:true});
+      radio.addEventListener('change',()=>{method=value;received.checked=false;confirmation.hidden=method==='bank';received.required=method!=='bank';accountNote.hidden=method!=='bank'||bankReady;submit.disabled=method==='bank'&&!bankReady;submit.textContent=d.isTest?'TEST · Montage abschliessen':method==='bank'?'Abschliessen und Rechnung senden':'Zahlung bestätigen und abschliessen';});
+      choices.append(e('label',{},radio,e('span',{},label)));
+    }
+    form.append(e('h3',{},'Montage fertig – Zahlung wählen'),e('p',{},'Bestätigte Offerte: '+money(total)+(paid?' · Bereits bezahlt: '+money(paid):'')),e('p',{},'Offen: '+money(remaining)),choices,confirmation,accountNote,e('p',{class:'record-note'},d.isTest?'TEST · Keine E-Mail wird versendet.':'Der Kunde erhält die Rechnung als PDF. Bei Bar oder TWINT ist sie als bezahlt markiert.'),submit,btn('Abbrechen',()=>form.remove()));
+    form.addEventListener('submit',ev=>{ev.preventDefault();if(!method||method==='bank'&&!bankReady)return;invoiceAction('/complete-invoice',{requestId,method,paymentReceived:received.checked},'✓ Montage abgeschlossen und Rechnung erstellt.');});$('#inlineAction').replaceChildren(form);form.scrollIntoView({block:'center',behavior:'smooth'});
   }
   async function showInvoiceSummary(r){
     const box=e('section',{class:'record-quote-summary'},e('h3',{},'Rechnung '+r.document.billing.number));root.append(box);

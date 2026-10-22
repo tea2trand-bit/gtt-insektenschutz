@@ -56,11 +56,14 @@ test('accepted order can be cancelled visibly, removes appointment and blocks ol
  assert.equal((await readRecord(db,input.id)).revision,cancelled.revision);assert.equal((await db.query('SELECT count(*)::int AS n FROM gtt_team_outbox')).rows[0].n,0);
  for(const action of [{action:'start-installation'},{action:'appointment',date:'2026-11-05',time:'11:00'},{action:'cancel-order'}])await assert.rejects(changeRecord(db,input.id,{revision:cancelled.revision,...action}));
  const reopened=await changeRecord(db,input.id,{revision:cancelled.revision,action:'decision',status:'Prihvaćeno'});assert.ok(reopened.document.orderCancellation.reopenedAt);assert.equal(reopened.document.appointmentStatus,'cancelled');assert.equal(reopened.document.status,'Prihvaćeno');
- const working=await changeRecord(db,input.id,{revision:reopened.revision,action:'start-installation'});const cancelledAgain=await changeRecord(db,input.id,{revision:working.revision,action:'cancel-order'});assert.equal(cancelledAgain.document.status,'Odbijeno');assert.equal(cancelledAgain.document.orderCancellation.previousStatus,'Montaža');
+ const working=await changeRecord(db,input.id,{revision:reopened.revision,action:'start-installation'});
+ for(const action of [{action:'cancel-order'},{action:'decision',status:'Odbijeno'}])await assert.rejects(changeRecord(db,input.id,{revision:working.revision,...action}),/vor Montagebeginn/);
+ assert.equal((await readRecord(db,input.id)).document.status,'Montaža');
 });
 test('existing manual decline of an accepted order also records cancellation; completed and invoiced work cannot use the cancellation shortcut',async t=>{
  const {db,input,message}=await setup(t);await handleOfferAcceptance(post(message.acceptanceURL,'confirm=yes&decision=accept'),context,db);
  let r=await readRecord(db,input.id);r=await changeRecord(db,input.id,{revision:r.revision,action:'decision',status:'Odbijeno'});assert.ok(r.document.orderCancellation);assert.equal((await handleOfferAcceptance(new Request(message.acceptanceURL),context,db)).status,410);
- r=await changeRecord(db,input.id,{revision:r.revision,action:'decision',status:'Prihvaćeno'});r=await changeRecord(db,input.id,{revision:r.revision,action:'start-installation'});r=await changeRecord(db,input.id,{revision:r.revision,action:'complete'});await assert.rejects(changeRecord(db,input.id,{revision:r.revision,action:'cancel-order'}),/Nur angenommene/);
+ r=await changeRecord(db,input.id,{revision:r.revision,action:'decision',status:'Prihvaćeno'});r=await changeRecord(db,input.id,{revision:r.revision,action:'start-installation'});
+ await db.query("UPDATE gtt_records SET document=jsonb_set(document,'{status}','\"Završeno\"') WHERE id=$1",[input.id]);await assert.rejects(changeRecord(db,input.id,{revision:r.revision,action:'cancel-order'}),/Nur angenommene/);
  await db.query("UPDATE gtt_records SET document=document||'{\"status\":\"Montaža\",\"billing\":{\"number\":\"fixture\"}}'::jsonb WHERE id=$1",[input.id]);await assert.rejects(changeRecord(db,input.id,{revision:r.revision,action:'cancel-order'}),/Rechnungsaktionen/);
 });

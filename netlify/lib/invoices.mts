@@ -7,7 +7,8 @@ import {deploymentContext} from './quote-intake.mts';
 const env=(key:string)=>(globalThis as any).Netlify?.env?.get(key)??process.env[key];
 const cents=(n:number)=>Math.round(n*100);
 const escape=(s:unknown)=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
-export const directBillingAvailable=(context:any)=>deploymentContext(context)==='production'?INVOICE_ACCOUNT_CONFIRMED:['dev','local','deploy-preview','branch-deploy'].includes(deploymentContext(context));
+export const directBillingAvailable=(context:any)=>['production','dev','local','deploy-preview','branch-deploy'].includes(deploymentContext(context));
+export const bankBillingAvailable=(context:any)=>directBillingAvailable(context)&&(deploymentContext(context)!=='production'||INVOICE_ACCOUNT_CONFIRMED);
 export function invoiceSnapshot(record:any,approved:any,method:string,now=new Date()){
  const d=record.document,q=approved.quote;
  if(!['bank','cash','twint'].includes(method))throw new RecordError('Bitte Rechnung, Bar oder TWINT auswählen.');
@@ -67,7 +68,7 @@ export async function completeWithInvoice(db:QueryDB,recordId:string,body:any,co
  const record=await readRecord(db,recordId),d=record.document;
  if(!Number.isInteger(body.revision)||record.revision!==body.revision)throw new RecordError('Die Anfrage wurde geändert. Bitte neu öffnen.',409);
  if(body.method!=='bank'&&body.paymentReceived!==true)throw new RecordError('Bitte den erhaltenen Bar- oder TWINT-Betrag ausdrücklich bestätigen.');
- if(deploymentContext(context)==='production'&&!(options.accountConfirmed??INVOICE_ACCOUNT_CONFIRMED))throw new RecordError('Das Empfängerkonto für Rechnungen muss zuerst bestätigt werden.',409);
+ if(body.method==='bank'&&!d.isTest&&deploymentContext(context)==='production'&&!(options.accountConfirmed??INVOICE_ACCOUNT_CONFIRMED))throw new RecordError('Das Empfängerkonto für Bankrechnungen muss zuerst bestätigt werden. Bar und TWINT sind verfügbar.',409);
  const approved=(await db.query('SELECT snapshot FROM gtt_quote_versions WHERE record_id=$1 AND version=$2',[recordId,d.intake?.version||0])).rows[0]?.snapshot;
  const snapshot={...invoiceSnapshot(record,approved||{},body.method),preview:deploymentContext(context)!=='production'||d.isTest===true},invoiceId=randomUUID();
  const payment=body.method!=='bank'&&snapshot.balanceCHF>0?[{id:invoiceId,amount:snapshot.balanceCHF,date:snapshot.date,note:body.method==='cash'?'Barzahlung bei Montageabschluss bestätigt':'TWINT-Zahlung bei Montageabschluss bestätigt'}]:[];

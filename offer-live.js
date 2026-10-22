@@ -17,10 +17,8 @@
   }
 
   function apply(o){
-    var label = o.name + " −" + o.percent + "%";
-    var scope = o.fenster && o.tueren ? "auf Fenster und Türen" : (o.fenster ? "auf Fenster" : "auf Türen / Plissee");
-    var until = o.validUntil ? " – gültig bis " + fmtDate(o.validUntil) : "";
-    var message = o.text || (o.name + ": " + o.percent + "% Rabatt " + scope + until);
+    var copy = window.gttOfferCopy(o), label = copy.label;
+    var message = label + ' · ' + copy.detail;
 
     // calculator
     if(typeof window.gttSetOffer === "function") window.gttSetOffer(o);
@@ -28,7 +26,7 @@
     if(calc && !calc.querySelector(".offer-ribbon")){
       var ribbon = el("div", "offer-ribbon");
       ribbon.appendChild(el("strong", null, label));
-      ribbon.appendChild(el("span", null, o.text || ("Rabatt " + scope + until)));
+      ribbon.appendChild(el("span", null, copy.detail));
       calc.insertBefore(ribbon, calc.firstChild);
     }
 

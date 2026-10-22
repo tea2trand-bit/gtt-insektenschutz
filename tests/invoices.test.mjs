@@ -4,7 +4,7 @@ import {readFile,readdir,mkdir,writeFile} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {PGlite} from '@electric-sql/pglite';
 import {createRecord,fromSubmission,readRecord,changeRecord,deleteArchivedTestRecord} from '../netlify/lib/records.mts';
-import {completeWithInvoice,invoiceSnapshot,invoicePDF,invoiceForRecord,deliverInvoice,confirmInvoicePayment,directBillingAvailable} from '../netlify/lib/invoices.mts';
+import {completeWithInvoice,invoiceSnapshot,invoicePDF,invoiceForRecord,deliverInvoice,confirmInvoicePayment,directBillingAvailable,bankBillingAvailable} from '../netlify/lib/invoices.mts';
 import {invoiceQRData} from '../netlify/lib/invoice-pdf.mts';
 import {renderInvoicePDF} from '../netlify/lib/invoice-pdf.mts';
 import {PDFDocument} from 'pdf-lib';
@@ -66,7 +66,7 @@ test('failed or uncertain provider outcome is truthful and retry uses identical 
 });
 test('test cards never send real invoices, and expired uncertain jobs never blindly resend',async t=>{
  const {db,input,body}=await setup(t,{isTest:true});process.env.RESEND_API_KEY='test-only-invoice-provider';t.after(()=>delete process.env.RESEND_API_KEY);
- let sent=0;const result=await completeWithInvoice(db,input.id,body,prod,{accountConfirmed:true,fetch:async()=>{sent++;throw Error('must not send');}});assert.equal(result.invoice.delivery_status,'preview_only');assert.equal(sent,0);
+ let sent=0;const result=await completeWithInvoice(db,input.id,body,prod,{accountConfirmed:false,fetch:async()=>{sent++;throw Error('must not send');}});assert.equal(result.invoice.delivery_status,'preview_only');assert.equal(sent,0);assert.equal(result.invoice.snapshot.preview,true);
  await db.query("UPDATE gtt_invoice_outbox SET status='unknown',created_at=now()-interval '24 hours' WHERE invoice_id=$1",[result.invoice.id]);await deliverInvoice(db,result.invoice.id,prod,{fetch:async()=>{sent++;throw Error('must not send');}});assert.equal(sent,0);
 });
 test('bank receipt is explicit and repeat safe; issued financial records cannot be overwritten or deleted',async t=>{
@@ -78,9 +78,21 @@ test('bank receipt is explicit and repeat safe; issued financial records cannot 
  await assert.rejects(changeRecord(db,input.id,{revision:paid.record.revision,action:'payment',amount:1,date:'2026-10-22'}),/Rechnungsaktionen/);
  await assert.rejects(deleteArchivedTestRecord(db,input.id,paid.record.revision),/erhalten/);
 });
-test('unconfirmed production account blocks invoice issuance while keeping the existing completion workflow available',async t=>{
- const {db,input,body}=await setup(t);assert.equal(directBillingAvailable(prod),false);assert.equal(directBillingAvailable(local),true);
+test('all payment choices are available; only an unconfirmed bank account blocks production bank invoices',async t=>{
+ const {db,input,body}=await setup(t);assert.equal(directBillingAvailable(prod),true);assert.equal(directBillingAvailable(local),true);assert.equal(bankBillingAvailable(prod),false);assert.equal(bankBillingAvailable(local),true);
  await assert.rejects(completeWithInvoice(db,input.id,body,prod),/Empfängerkonto/);assert.equal((await readRecord(db,input.id)).revision,1);
- const old=process.env.GTT_RUNTIME_CONTEXT;process.env.GTT_RUNTIME_CONTEXT='production';try{assert.equal(directBillingAvailable({}),false);await assert.rejects(completeWithInvoice(db,input.id,body,{}),/Empfängerkonto/);}finally{old===undefined?delete process.env.GTT_RUNTIME_CONTEXT:process.env.GTT_RUNTIME_CONTEXT=old;}
- const closed=await changeRecord(db,input.id,{revision:1,action:'complete'});assert.equal(closed.document.status,'Završeno');assert.equal(await invoiceForRecord(db,input.id),null);
+ const old=process.env.GTT_RUNTIME_CONTEXT;process.env.GTT_RUNTIME_CONTEXT='production';try{assert.equal(bankBillingAvailable({}),false);await assert.rejects(completeWithInvoice(db,input.id,body,{}),/Empfängerkonto/);}finally{old===undefined?delete process.env.GTT_RUNTIME_CONTEXT:process.env.GTT_RUNTIME_CONTEXT=old;}
+ await assert.rejects(changeRecord(db,input.id,{revision:1,action:'complete'}),/Zahlungsart/);assert.equal(await invoiceForRecord(db,input.id),null);
+});
+
+test('production cash and TWINT receipts do not need bank details and send once after explicit payment confirmation',async t=>{
+ const old=process.env.RESEND_API_KEY;process.env.RESEND_API_KEY='test-only-invoice-provider';t.after(()=>old===undefined?delete process.env.RESEND_API_KEY:process.env.RESEND_API_KEY=old);
+ for(const method of ['cash','twint']){
+  const {db,input,body}=await setup(t);let sent=0;
+  const options={accountConfirmed:false,fetch:async()=>{sent++;return Response.json({id:'fake-'+method});}};
+  await assert.rejects(completeWithInvoice(db,input.id,{...body,method},prod,options),/ausdrücklich bestätigen/);
+  const payload={...body,method,paymentReceived:true},result=await completeWithInvoice(db,input.id,payload,prod,options);
+  assert.equal(result.invoice.snapshot.paid,true);assert.equal(result.invoice.delivery_status,'accepted');assert.equal(sent,1);
+  await completeWithInvoice(db,input.id,payload,prod,options);assert.equal(sent,1);assert.equal((await readRecord(db,input.id)).document.payments.length,1);
+ }
 });
