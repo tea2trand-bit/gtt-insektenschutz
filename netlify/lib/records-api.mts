@@ -5,7 +5,7 @@ import {calculateMeasuredOffer,refreshDraftContact} from './admin-measurements.m
 import {readRequestMeasurements} from './request-measurements.mts';
 import type {Offer} from './projects-store.mts';
 import {quotePDFResponse} from './quote-pdf.mts';
-import {completeWithInvoice,confirmInvoicePayment,invoiceForRecord,invoicePDF,deliverInvoice,directBillingAvailable} from './invoices.mts';
+import {completeWithInvoice,confirmInvoicePayment,invoiceForRecord,invoicePDF,deliverInvoice,directBillingAvailable,bankBillingAvailable,cancelWithInvoice,invoiceCancellationPDF} from './invoices.mts';
 const reply = (data:unknown,status=200) => Response.json(data,{status,headers:{"Cache-Control":"no-store", "X-Content-Type-Options":"nosniff"}});
 export async function recordsAPI(req: Request, db: QueryDB, path: string[], options:{offer?:Offer;context?:any}={}) {
   const id = path[0];
@@ -57,10 +57,10 @@ export async function recordsAPI(req: Request, db: QueryDB, path: string[], opti
     const summary=await db.query(`WITH offer_amounts AS (
       SELECT CASE WHEN jsonb_typeof(document->'agreedPrice')='number' THEN (document->>'agreedPrice')::numeric
         WHEN jsonb_typeof(document->'quotedPrice')='number' THEN (document->>'quotedPrice')::numeric END AS amount
-      FROM gtt_records WHERE COALESCE(document->>'isTest','false')<>'true' AND COALESCE(document->>'archivedAt','')=''
+      FROM gtt_records WHERE COALESCE(document->>'isTest','false')<>'true' AND COALESCE(document->>'archivedAt','')='' AND NOT (document ? 'orderCancellation' AND COALESCE(document->'orderCancellation'->>'reopenedAt','')='')
     ) SELECT COALESCE(sum(amount),0)::text AS total,count(amount)::int AS count FROM offer_amounts WHERE amount>=0`);
     const offerSummary={total:Number(summary.rows[0].total),count:summary.rows[0].count};
-    return reply({billingAvailable:directBillingAvailable(options.context),offerSummary,records:rows.map(({offer_versions,...record})=>({...record,offerReferences:offer_versions.flatMap((version:string)=>[offerNumber(record.id,Number(version)),legacyOfferNumber(record.id,Number(version))])}))});
+    return reply({billingAvailable:directBillingAvailable(options.context),bankBillingAvailable:bankBillingAvailable(options.context),offerSummary,records:rows.map(({offer_versions,...record})=>({...record,offerReferences:offer_versions.flatMap((version:string)=>[offerNumber(record.id,Number(version)),legacyOfferNumber(record.id,Number(version))])}))});
   }
   if (id === "import" && method === "POST") {
     const body:any = await req.json();
@@ -75,6 +75,10 @@ export async function recordsAPI(req: Request, db: QueryDB, path: string[], opti
   }
   if (!/^GTT-[a-f0-9]{24}$/.test(id || "")) throw new RecordError("Neispravan ID kartona.");
   if(path[1]==='complete-invoice'&&path.length===2&&method==='POST')return reply(await completeWithInvoice(db,id,await req.json(),options.context));
+  if(path[1]==='invoice-cancellation'&&path.length===2&&method==='GET'){
+    const invoice=await invoiceForRecord(db,id);if(!invoice?.cancellation)throw new RecordError('Stornobeleg nicht gefunden.',404);
+    return new Response(new Uint8Array(await invoiceCancellationPDF(db,invoice.id)),{headers:{'Content-Type':'application/pdf','Content-Disposition':'attachment; filename="'+invoice.cancellation.number+'.pdf"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+  }
   if(path[1]==='invoice'&&path.length===2){
     const invoice=await invoiceForRecord(db,id);
     if(!invoice)throw new RecordError('Rechnung nicht gefunden.',404);
@@ -86,6 +90,7 @@ export async function recordsAPI(req: Request, db: QueryDB, path: string[], opti
       const body:any=await req.json();
       if(body.action==='confirm-payment')return reply(await confirmInvoicePayment(db,id,body));
       if(body.action==='retry'){
+        if(invoice.cancellation)throw new RecordError('Die Rechnung wurde storniert und wird nicht erneut versendet.',409);
         await deliverInvoice(db,invoice.id,options.context);
         return reply({record:await readRecord(db,id),invoice:await invoiceForRecord(db,id)});
       }
@@ -135,6 +140,7 @@ export async function recordsAPI(req: Request, db: QueryDB, path: string[], opti
   if (path.length===1 && method === "GET") return reply({record:await readRecord(db,id)});
   if (path.length===1 && method === "PATCH") {
     const body:any=await req.json();
+    if(body.action==='cancel-order'&&(await readRecord(db,id)).document.billing)return reply(await cancelWithInvoice(db,id,body));
     const refreshed=await refreshDraftContact(db,id,body,options);
     if(refreshed)return reply(refreshed);
     return reply({record:await changeRecord(db,id,body)});

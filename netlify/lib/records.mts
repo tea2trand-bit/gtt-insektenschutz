@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import {INVOICE_ACCOUNT_CONFIRMED} from './invoice-settings.mts';
 
 export const STATUSES = ["Novi upit", "Ponuda poslata", "Čeka odgovor", "Prihvaćeno", "Odbijeno", "Montaža", "Završeno"];
 export class RecordError extends Error {
@@ -50,12 +49,15 @@ const texts: Record<string, number> = { name:200, company:200, email:250, phone:
 const dates = ["offerSentAt", "decisionDate", "measuredAt", "orderedAt", "appointmentAt", "installedAt", "invoiceDate", "invoiceDue"];
 export function applyChange(current: any, body: any, today = new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Zurich'})) {
   const d = structuredClone(current);
-  const kind = body.action || "update";
+  let kind = body.action || "update";
+  if(kind==='cancel-order'&&body.confirmCancellation!==true)throw new RecordError('Bitte die Stornierung ausdrücklich bestätigen.');
+  // Invoiced records use the atomic invoice cancellation path in recordsAPI.
+  if(kind==='cancel-order'&&!d.billing&&['Odbijeno','Završeno'].includes(d.status))kind='archive';
   if(d.billing){
     if(!['update','archive','restore','complaint'].includes(kind))throw new RecordError('Für diesen Auftrag existiert bereits eine Rechnung. Bitte die Rechnungsaktionen verwenden.',409);
     if(kind==='update'&&Object.keys(body.patch||{}).some(k=>!['name','company','email','phone','channel','address','postalCode','notes','workNotes'].includes(k)))throw new RecordError('Die ausgestellte Rechnung und ihr Betrag können nicht überschrieben werden.',409);
   }
-  if(kind==='complete'&&d.intake?.quote&&INVOICE_ACCOUNT_CONFIRMED)throw new RecordError('Bitte den Auftrag mit der Zahlungsart Rechnung, Bar oder TWINT abschliessen.');
+  if(kind==='complete'&&d.intake?.quote)throw new RecordError('Bitte den Auftrag mit der Zahlungsart Rechnung, Bar oder TWINT abschliessen.');
   if(d.archivedAt&&!['archive','restore'].includes(kind))throw new RecordError("Upit je uklonjen iz aktivne evidencije. Prvo ga vrati iz arhive.",409);
   if(kind==='archive'){
     if(d.archivedAt)throw new RecordError("Upit je već u arhivi.",409);
@@ -66,10 +68,10 @@ export function applyChange(current: any, body: any, today = new Date().toLocale
   }else if(kind==='historical-complete'){
     d.status='Završeno';d.historicalClosedAt=new Date().toISOString();
   }else if(kind==='cancel-order'||kind==='decision'&&body.status==='Odbijeno'&&['Prihvaćeno','Montaža'].includes(d.status)){
-    if(!['Prihvaćeno','Montaža'].includes(d.status))throw new RecordError('Nur angenommene Aufträge oder laufende Montagen können storniert werden.',409);
+    if(!['Novi upit','Ponuda poslata','Čeka odgovor','Prihvaćeno','Montaža'].includes(d.status))throw new RecordError('Diese Anfrage kann nicht storniert werden.',409);
     const reason=text(body.reason,2000);
     d.orderCancellation={cancelledAt:new Date().toISOString(),previousStatus:d.status,previousDecisionDate:d.decisionDate,quoteVersion:d.intake?.version||null,reason};
-    d.status='Odbijeno';d.decisionDate=today;d.decisionReason=body.reason===undefined?(kind==='cancel-order'?'Auftrag nach Zusage storniert':d.decisionReason):reason;
+    d.status='Odbijeno';d.decisionDate=today;d.decisionReason=body.reason===undefined?(kind==='cancel-order'?'Anfrage / Auftrag storniert':d.decisionReason):reason;
     if(d.appointmentAt&&d.appointmentStatus!=='cancelled'){
       d.appointmentStatus='cancelled';d.appointmentCancelledAt=new Date().toISOString();d.appointmentCancelReason='Auftrag storniert';
     }

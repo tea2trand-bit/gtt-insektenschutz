@@ -2,12 +2,13 @@ import {randomUUID} from 'node:crypto';
 import {RecordError,readRecord,type QueryDB} from './records.mts';
 import {offerNumber,money} from './quote-email.mts';
 import {INVOICE_ISSUER,INVOICE_ACCOUNT_CONFIRMED} from './invoice-settings.mts';
-import {renderInvoicePDF} from './invoice-pdf.mts';
+import {renderInvoicePDF,renderInvoiceCancellationPDF} from './invoice-pdf.mts';
 import {deploymentContext} from './quote-intake.mts';
 const env=(key:string)=>(globalThis as any).Netlify?.env?.get(key)??process.env[key];
 const cents=(n:number)=>Math.round(n*100);
 const escape=(s:unknown)=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
-export const directBillingAvailable=(context:any)=>deploymentContext(context)==='production'?INVOICE_ACCOUNT_CONFIRMED:['dev','local','deploy-preview','branch-deploy'].includes(deploymentContext(context));
+export const directBillingAvailable=(context:any)=>['production','dev','local','deploy-preview','branch-deploy'].includes(deploymentContext(context));
+export const bankBillingAvailable=(context:any)=>directBillingAvailable(context)&&(deploymentContext(context)!=='production'||INVOICE_ACCOUNT_CONFIRMED);
 export function invoiceSnapshot(record:any,approved:any,method:string,now=new Date()){
  const d=record.document,q=approved.quote;
  if(!['bank','cash','twint'].includes(method))throw new RecordError('Bitte Rechnung, Bar oder TWINT auswählen.');
@@ -24,7 +25,7 @@ export function invoiceSnapshot(record:any,approved:any,method:string,now=new Da
  return {schemaVersion:'gtt-invoice-v1',createdAt:now.toISOString(),date:day,dueDate:due.toISOString().slice(0,10),serviceDate:day,issuer:INVOICE_ISSUER,customer:{name:d.name,company:d.company,email:d.email,phone:d.phone,address:d.address,postalCode:d.postalCode},offerReference:offerNumber(record.id,d.intake.version),quoteVersion:d.intake.version,quote:q,customerAcceptance:d.customerAcceptance,method,totalCHF,netCHF,vatCHF:(totalCents-cents(netCHF))/100,prepaidCHF:prepaidCents/100,balanceCHF:(totalCents-prepaidCents)/100,paid:method!=='bank'||prepaidCents===totalCents};
 }
 export async function invoiceForRecord(db:QueryDB,id:string){
- const {rows}=await db.query('SELECT i.id,i.number,i.method,i.snapshot,o.status AS delivery_status,o.error_code FROM gtt_invoices i JOIN gtt_invoice_outbox o ON o.invoice_id=i.id WHERE i.record_id=$1',[id]);
+ const {rows}=await db.query('SELECT i.id,i.number,i.method,i.snapshot,i.cancellation,o.status AS delivery_status,o.error_code FROM gtt_invoices i JOIN gtt_invoice_outbox o ON o.invoice_id=i.id WHERE i.record_id=$1',[id]);
  return rows[0]||null;
 }
 export function renderInvoiceEmail(s:any){
@@ -44,7 +45,8 @@ export async function invoicePDF(db:QueryDB,id:string){
 export async function deliverInvoice(db:QueryDB,id:string,context:any={},options:{fetch?:typeof fetch}={}){
  if(deploymentContext(context)!=='production'||!env('RESEND_API_KEY'))return;
  const pdf=await invoicePDF(db,id);
- const reserved=await db.query(`UPDATE gtt_invoice_outbox SET status='processing',attempts=attempts+1,lease_until=now()+interval '1 minute',updated_at=now() WHERE invoice_id=$1 AND attempts<3 AND created_at>now()-interval '23 hours' AND (status IN ('queued','failed','unknown') OR (status='processing' AND lease_until<now())) RETURNING *`,[id]);
+ const reserved=await db.query(`WITH active AS MATERIALIZED (SELECT id FROM gtt_invoices WHERE id=$1 AND cancellation IS NULL FOR UPDATE)
+ UPDATE gtt_invoice_outbox o SET status='processing',attempts=attempts+1,lease_until=now()+interval '1 minute',updated_at=now() FROM active a WHERE o.invoice_id=a.id AND attempts<3 AND o.created_at>now()-interval '23 hours' AND (status IN ('queued','failed','unknown') OR (status='processing' AND lease_until<now())) RETURNING o.*`,[id]);
  const job=reserved.rows[0];if(!job)return;
  const invoice=(await db.query('SELECT snapshot FROM gtt_invoices WHERE id=$1',[id])).rows[0],s=invoice.snapshot;
  let status='unknown',provider=null,code='provider_outcome_unknown';
@@ -58,8 +60,9 @@ export async function deliverInvoice(db:QueryDB,id:string,context:any={},options
 export async function completeWithInvoice(db:QueryDB,recordId:string,body:any,context:any={},options:{fetch?:typeof fetch;accountConfirmed?:boolean}={}){
  if(deploymentContext(context)==='unknown')throw new RecordError('Die Systemumgebung ist nicht konfiguriert. Bitte den Support kontaktieren.',503);
  if(!/^[a-f0-9-]{36}$/i.test(body.requestId||''))throw new RecordError('Bitte den Montageabschluss erneut öffnen.');
- const existing=(await db.query('SELECT id,request_id,method FROM gtt_invoices WHERE record_id=$1',[recordId])).rows[0];
+ const existing=(await db.query('SELECT id,request_id,method,cancellation FROM gtt_invoices WHERE record_id=$1',[recordId])).rows[0];
  if(existing){
+  if(existing.cancellation)throw new RecordError('Die Rechnung wurde storniert.',409);
   if(existing.request_id!==body.requestId||existing.method!==body.method)throw new RecordError('Für diesen Auftrag existiert bereits eine Rechnung.',409);
   await invoicePDF(db,existing.id);await deliverInvoice(db,existing.id,context,options);
   return {record:await readRecord(db,recordId),invoice:await invoiceForRecord(db,recordId)};
@@ -67,7 +70,7 @@ export async function completeWithInvoice(db:QueryDB,recordId:string,body:any,co
  const record=await readRecord(db,recordId),d=record.document;
  if(!Number.isInteger(body.revision)||record.revision!==body.revision)throw new RecordError('Die Anfrage wurde geändert. Bitte neu öffnen.',409);
  if(body.method!=='bank'&&body.paymentReceived!==true)throw new RecordError('Bitte den erhaltenen Bar- oder TWINT-Betrag ausdrücklich bestätigen.');
- if(deploymentContext(context)==='production'&&!(options.accountConfirmed??INVOICE_ACCOUNT_CONFIRMED))throw new RecordError('Das Empfängerkonto für Rechnungen muss zuerst bestätigt werden.',409);
+ if(body.method==='bank'&&!d.isTest&&deploymentContext(context)==='production'&&!(options.accountConfirmed??INVOICE_ACCOUNT_CONFIRMED))throw new RecordError('Das Empfängerkonto für Bankrechnungen muss zuerst bestätigt werden. Bar und TWINT sind verfügbar.',409);
  const approved=(await db.query('SELECT snapshot FROM gtt_quote_versions WHERE record_id=$1 AND version=$2',[recordId,d.intake?.version||0])).rows[0]?.snapshot;
  const snapshot={...invoiceSnapshot(record,approved||{},body.method),preview:deploymentContext(context)!=='production'||d.isTest===true},invoiceId=randomUUID();
  const payment=body.method!=='bank'&&snapshot.balanceCHF>0?[{id:invoiceId,amount:snapshot.balanceCHF,date:snapshot.date,note:body.method==='cash'?'Barzahlung bei Montageabschluss bestätigt':'TWINT-Zahlung bei Montageabschluss bestätigt'}]:[];
@@ -95,6 +98,7 @@ export async function completeWithInvoice(db:QueryDB,recordId:string,body:any,co
 export async function confirmInvoicePayment(db:QueryDB,recordId:string,body:any){
  const record=await readRecord(db,recordId),invoice=await invoiceForRecord(db,recordId),d=record.document;
  if(!invoice||body.paymentReceived!==true)throw new RecordError('Bitte den tatsächlichen Zahlungseingang bestätigen.');
+ if(invoice.cancellation)throw new RecordError('Die Rechnung wurde storniert. Kein offener Rechnungsbetrag.',409);
  if(d.archivedAt)throw new RecordError('Bitte die Anfrage zuerst aus dem Archiv wiederherstellen.',409);
  const paid=(d.payments||[]).reduce((n:number,p:any)=>n+cents(p.amount),0),remaining=cents(invoice.snapshot.totalCHF)-paid;
  if(remaining<=0)return {record,invoice};
@@ -106,6 +110,39 @@ export async function confirmInvoicePayment(db:QueryDB,recordId:string,body:any)
 }
 export async function dispatchPendingInvoices(db:QueryDB,context:any={},options:{fetch?:typeof fetch}={}){
  if(deploymentContext(context)!=='production'||!env('RESEND_API_KEY'))return;
- const {rows}=await db.query("SELECT invoice_id FROM gtt_invoice_outbox WHERE status IN ('queued','failed','unknown','processing') AND attempts<3 AND created_at>now()-interval '23 hours' AND (lease_until IS NULL OR lease_until<now()) ORDER BY created_at LIMIT 5");
+ const {rows}=await db.query("SELECT o.invoice_id FROM gtt_invoice_outbox o JOIN gtt_invoices i ON i.id=o.invoice_id WHERE i.cancellation IS NULL AND o.status IN ('queued','failed','unknown','processing') AND o.attempts<3 AND o.created_at>now()-interval '23 hours' AND (o.lease_until IS NULL OR o.lease_until<now()) ORDER BY o.created_at LIMIT 5");
  for(const job of rows){try{await deliverInvoice(db,job.invoice_id,context,options);}catch{console.error('Invoice delivery preparation failed');}}
+}
+
+/** Cancel the obligation and archive the card together; never erase or refund payments. */
+export async function cancelWithInvoice(db:QueryDB,recordId:string,body:any){
+ if(body.confirmCancellation!==true)throw new RecordError('Bitte die Stornierung ausdrücklich bestätigen.');
+ const record=await readRecord(db,recordId),invoice=await invoiceForRecord(db,recordId),d=record.document;
+ if(!invoice)throw new RecordError('Rechnung nicht gefunden.',404);
+ if(invoice.cancellation)return {record,invoice};
+ if(!Number.isInteger(body.revision)||record.revision!==body.revision)throw new RecordError('Die Anfrage wurde geändert. Bitte neu öffnen.',409);
+ const at=new Date(),paidCHF=(d.payments||[]).reduce((sum:number,p:any)=>sum+cents(p.amount),0)/100,s=invoice.snapshot;
+ const cancellation={number:invoice.number+'-ST',originalNumber:invoice.number,createdAt:at.toISOString(),date:at.toLocaleDateString('sv-SE',{timeZone:'Europe/Zurich'}),totalCHF:-s.totalCHF,netCHF:-s.netCHF,vatCHF:-s.vatCHF,refundDueCHF:paidCHF,reason:typeof body.reason==='string'?body.reason.trim().slice(0,2000):'',issuer:s.issuer,customer:s.customer,preview:s.preview===true};
+ const pdf=await renderInvoiceCancellationPDF(cancellation);
+ const next={...d,status:'Odbijeno',archivedAt:at.toISOString(),orderCancellation:{cancelledAt:at.toISOString(),previousStatus:d.status,quoteVersion:d.intake?.version||null,reason:cancellation.reason},billing:{...d.billing,cancelledAt:at.toISOString(),cancellationNumber:cancellation.number,refundDueCHF:paidCHF}};
+ const {rows}=await db.query(`WITH target AS MATERIALIZED (
+  SELECT id FROM gtt_records WHERE id=$1 AND revision=$2 FOR UPDATE
+ ), bill AS MATERIALIZED (
+  SELECT i.id FROM gtt_invoices i JOIN target t ON t.id=i.record_id WHERE i.cancellation IS NULL FOR UPDATE OF i
+ ), idle AS MATERIALIZED (
+  SELECT b.id FROM bill b JOIN gtt_invoice_outbox o ON o.invoice_id=b.id WHERE o.status<>'processing' OR o.lease_until<now() FOR UPDATE OF o
+ ), cancelled AS (
+  UPDATE gtt_invoices i SET cancellation=$3::jsonb,cancellation_pdf=$4 FROM idle b WHERE i.id=b.id RETURNING i.record_id
+ ), changed AS (
+  UPDATE gtt_records r SET document=$5::jsonb,revision=revision+1,updated_at=now() FROM cancelled c WHERE r.id=c.record_id RETURNING r.*
+ ), audit AS (
+  INSERT INTO gtt_record_history(record_id,revision,actor,kind,snapshot) SELECT id,revision,'Admin: Auftrag und Rechnung storniert','invoice_cancelled',document FROM changed RETURNING record_id
+ ) SELECT id FROM changed`,[recordId,body.revision,JSON.stringify(cancellation),pdf,JSON.stringify(next)]);
+ if(!rows.length){const latest=await invoiceForRecord(db,recordId);if(latest?.cancellation)return {record:await readRecord(db,recordId),invoice:latest};throw new RecordError('Die Karte wurde geändert oder die Rechnung wird gerade versendet. Bitte aktualisieren und erneut stornieren.',409);}
+ return {record:await readRecord(db,recordId),invoice:await invoiceForRecord(db,recordId)};
+}
+export async function invoiceCancellationPDF(db:QueryDB,id:string){
+ const row=(await db.query('SELECT cancellation_pdf FROM gtt_invoices WHERE id=$1',[id])).rows[0];
+ if(!row?.cancellation_pdf)throw new RecordError('Stornobeleg nicht gefunden.',404);
+ return Buffer.from(row.cancellation_pdf);
 }

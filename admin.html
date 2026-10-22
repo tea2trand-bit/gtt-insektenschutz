@@ -156,8 +156,8 @@ input::placeholder{color:#a3aba5}
             <input id="ofUntil" type="date">
           </label>
         </div>
-        <label>Eigener Hinweistext (optional)
-          <input id="ofText" maxlength="160" placeholder="z. B. Jetzt bestellen und im Frühling profitieren – 15% Herbstrabatt">
+        <label>Hinweis ohne Rabattzahl (optional)
+          <input id="ofText" maxlength="160" placeholder="z. B. Jetzt bestellen, Montage vor dem nächsten Frühling">
         </label>
         <div class="offer-preview" id="ofPreview"></div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -207,6 +207,7 @@ input::placeholder{color:#a3aba5}
 
 <div class="toast" id="toast"></div>
 
+<script src="offer-copy.js?v=20261022"></script>
 <script>
 (() => {
   const CHUNK = 3 * 1024 * 1024; // must match CHUNK_SIZE in netlify/lib/projects-store.mts
@@ -487,7 +488,7 @@ input::placeholder{color:#a3aba5}
   function renderOfferPreview(){
     const o = readOfferForm();
     const p = Math.min(50, Math.max(0, Math.round(o.percent) || 0));
-    const name = o.name || "Herbst-/Winteraktion";
+    const copy = window.gttOfferCopy({...o, percent:p, name:o.name || "Herbst-/Winteraktion"});
     of("ofActiveLabel").textContent = o.active ? "Aktion aktiviert" : "Aktion deaktiviert";
     let state;
     if (!o.active) state = ["off", "Deaktiviert – auf der Website ausgeblendet"];
@@ -501,7 +502,7 @@ input::placeholder{color:#a3aba5}
     of("ofPreview").innerHTML =
       `<div><span style="font-weight:600">Vorschau:</span> <span class="offer-state ${state[0]}">${state[1]}</span></div>` +
       `<div>${line("Fenster", "fenster")}</div><div>${line("Türen / Plissee", "tueren")}</div>` +
-      `<div class="muted">Hinweis: „${(o.text || `${name}: ${p}% Rabatt ${o.fenster && o.tueren ? "auf Fenster und Türen" : o.fenster ? "auf Fenster" : "auf Türen / Plissee"}${o.validUntil ? " – gültig bis " + fmtDate(o.validUntil) : ""}`).replace(/</g, "&lt;")}“</div>`;
+      `<div class="muted">${copy.label.replace(/&/g, "&amp;").replace(/</g, "&lt;")}<br>${copy.detail.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</div>`;
   }
   function fillOfferForm(o){
     of("ofActive").checked = !!o.active;

@@ -2,7 +2,7 @@
 
 Stand: 22.10.2026. Smallinvoice wird fuer diesen Ablauf nicht verwendet.
 
-- Auftrag in Montage oeffnen und Auftrag abschliessen waehlen.
+- Auftrag in Montage oeffnen und Montage abschliessen waehlen. Danach erscheinen Rechnung, TWINT und Barzahlung.
 - Rechnung / Bankueberweisung: unveraenderliche Rechnung mit QR-Zahlteil; Restbetrag bleibt offen.
 - Bar / TWINT: den tatsaechlich erhaltenen Restbetrag bestaetigen; bezahlte Rechnung als Beleg.
 - Betrag stammt ausschliesslich aus der aktuellen, vom Kunden bestaetigten Offertversion. Aufmass muss vorliegen, eine offene Korrektur blockiert die Rechnung.
@@ -15,8 +15,14 @@ Stand: 22.10.2026. Smallinvoice wird fuer diesen Ablauf nicht verwendet.
 - Alte abgeschlossene Auftraege werden nicht nachtraeglich abgerechnet. Fuer Goran pruefen / Abschliessen bleibt ohne Rechnung.
 - PDF-Abruf und Aktionen verlangen die bestehende Admin-Anmeldung. Ausgestellte Rechnungen koennen nicht durch normale Kartenbearbeitung ueberschrieben oder mit TEST-Aufraeumen geloescht werden.
 
+## Stornieren
+
+Die Schaltflaeche Stornieren ist voruebergehend in allen aktiven Phasen verfuegbar. Der erste Klick oeffnet die Rueckfrage; erst Ja, stornieren speichert die Aktion. Ohne Rechnung wechseln offene Karten nach Abgelehnt, bereits abgelehnte oder abgeschlossene Karten werden archiviert.
+
+Mit Rechnung werden Karte und Rechnung in einer einzigen Datenbankoperation storniert und die Karte archiviert. Der unveraenderte Originalbeleg bleibt erhalten; ein separater Stornobeleg mit negativen Brutto-, Netto- und Steuerbetraegen steht als PDF zur Verfuegung. Er wird nicht automatisch per E-Mail versendet. Wiederholte Klicks erzeugen keinen zweiten Beleg. Bereits gezahlte Betraege werden als zurueckzuerstatten ausgewiesen; keine automatische Rueckzahlung. Ein laufender Rechnungsversand muss erst beendet sein. Stornierte Rechnungen und Offerten werden nicht erneut versendet.
+
 ## Empfaengerkonto noch zu bestaetigen
 
-Die gelieferte PDF-Rechnung nennt GT Trading GmbH / Raiffeisen; die gelieferte QR-Grafik nennt einen anderen Kontoinhaber. invoice-settings.mts enthaelt die Firmendaten aus der PDF-Vorlage. INVOICE_ACCOUNT_CONFIRMED=false blockiert die echte Ausstellung, bis der Auftraggeber das Zielkonto bestaetigt. Es wird kein statischer fremder QR-Code wiederverwendet. Solange die Bestaetigung fehlt, bleibt der bisherige Montageabschluss in Produktion verfuegbar; die neuen Zahlungsoptionen sind nur lokal und im Deploy Preview aktiv. Die E-Mail-Vereinfachung kann unabhaengig davon veroefentlicht werden.
+Die gelieferte PDF-Rechnung nennt GT Trading GmbH / Raiffeisen; die gelieferte QR-Grafik nennt einen anderen Kontoinhaber. invoice-settings.mts enthaelt die Firmendaten aus der PDF-Vorlage. INVOICE_ACCOUNT_CONFIRMED=false blockiert nur echte Bankrechnungen, bis der Auftraggeber das Zielkonto bestaetigt. Bar und TWINT sind bereits nutzbar: nach bestaetigtem Zahlungseingang entsteht eine bezahlte Rechnung ohne QR-Zahlteil oder Bankverbindung. Alle drei Zahlungsarten werden beim Montageabschluss als direkte Auswahl angezeigt. Es wird kein statischer fremder QR-Code wiederverwendet.
 
 Die Zahlungsfrist von 10 Tagen und die MwSt.-Nummer stammen ebenfalls aus der gelieferten Firmenvorlage. Einfache Rechnungen werden auf einer A4-Seite mit normgerechtem QR-Zahlteil erstellt. Unvollstaendig strukturierte Kundenadressen werden nicht fuer den QR erfunden; dessen Zahlbar-durch-Feld bleibt dann leer.

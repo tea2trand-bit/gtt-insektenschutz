@@ -102,6 +102,7 @@ async function dispatchQuoteEmail(db:QueryDB,recordId:string,version:number,snap
   // provider's 24h idempotency window (23h locally for clock/transport margin).
   const {rows}=await db.query(`UPDATE gtt_quote_outbox SET status='processing',attempts=attempts+1,lease_until=now()+interval '1 minute',updated_at=now()
     WHERE record_id=$1 AND quote_version=$2 AND attempts<3 AND created_at>now()-interval '23 hours'
+      AND EXISTS (SELECT 1 FROM gtt_records r WHERE r.id=$1 AND COALESCE(r.document->>'archivedAt','')='' AND r.document->>'status' NOT IN ('Odbijeno','Završeno') AND NOT (r.document ? 'orderCancellation' AND COALESCE(r.document->'orderCancellation'->>'reopenedAt','')=''))
       AND (status='queued' OR (status='processing' AND lease_until<now())) RETURNING *`,[recordId,version]);
   const job=rows[0];if(!job)return;
   let state="unknown",providerId:string|null=null,errorCode:string|null=null;

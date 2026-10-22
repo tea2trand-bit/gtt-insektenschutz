@@ -49,3 +49,24 @@ export async function renderInvoicePDF(s:any):Promise<Buffer>{
  }
  doc.end();return result;
 }
+
+/** Separate negative document; the original invoice and its PDF stay unchanged. */
+export async function renderInvoiceCancellationPDF(s:any):Promise<Buffer>{
+ const doc=new PDFDocument({size:'A4',margin:42,info:{Title:'Stornobeleg '+s.number,Author:s.issuer.name,CreationDate:new Date(s.createdAt),ModDate:new Date(s.createdAt)}});
+ const chunks:Buffer[]=[];const result=new Promise<Buffer>((resolve,reject)=>{doc.on('data',c=>chunks.push(c));doc.on('end',()=>resolve(Buffer.concat(chunks)));doc.on('error',reject);});
+ doc.registerFont('GTT',path.join(process.cwd(),'netlify/assets/fonts/DejaVuSans.ttf'));doc.font('GTT').fillColor('#24392b');
+ const line=(value:string,size=10)=>{doc.fontSize(size).text(value,{lineGap:3});doc.moveDown(.65);};
+ line('GTT Insektenschutz',20);line(s.issuer.name+'\n'+s.issuer.address+' '+s.issuer.buildingNumber+' · '+s.issuer.zip+' '+s.issuer.city+'\n'+s.issuer.email+' · '+s.issuer.phone);
+ doc.moveDown();line('Stornobeleg '+s.number,17);line('Zur Rechnung '+s.originalNumber+'\nStorniert am '+date(s.date));
+ line([s.customer.company,s.customer.name,s.customer.address,s.customer.postalCode].filter(Boolean).join('\n'));
+ doc.moveDown();line('Die Rechnung '+s.originalNumber+' wird vollständig storniert.',12);
+ line('Stornobetrag inkl. '+s.issuer.vatRate+' % MwSt.: '+money(s.totalCHF),14);
+ line('Nettobetrag: '+money(s.netCHF)+' · MwSt.: '+money(s.vatCHF));
+ line('Offener Rechnungsbetrag nach Stornierung: CHF 0.00',12);
+ if(s.refundDueCHF>0)line('Bereits bezahlt: '+money(s.refundDueCHF)+'\nZurückzuerstatten: '+money(s.refundDueCHF)+'\nDieser Beleg bestätigt keine Rückzahlung.');
+ if(s.reason)line('Grund: '+s.reason);
+ line('Keine Zahlungsaufforderung. Bitte nicht nochmals bezahlen.');
+ if(s.preview)line('MUSTER - Nicht an Kunden versendet.');
+ line('MwSt.-Nr. '+s.issuer.vatId+' · '+s.issuer.name,8);
+ doc.end();return result;
+}
