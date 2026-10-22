@@ -8,21 +8,23 @@ export function renderTeamNotification(record:any,kind='new_inquiry',baseURL=pub
  const d=record.document,intake=d.intake,quote=intake?.quote;
  const source=({'Kontakt':'Kontaktformular','Kalkulator':'Preisrechner','B2B':'B2B-Anfrage','Ručni unos':'Manuelle Erfassung'} as any)[record.source]||record.source;
  const customer=d.name||d.company||'Kunde ohne Namen';
- const title=kind==='customer_acceptance'?'Kunde möchte fortfahren':'Neue Anfrage';
+ const declined=kind==='customer_decline';
+ const title=declined?'Kunde hat die Offerte abgelehnt':kind==='customer_acceptance'?'Kunde möchte fortfahren':'Neue Anfrage';
  const email=intake?.email?.status;
  const sent=email==='accepted'?(intake.status==='priced'?'Offerte an den Kunden versendet':'Rückfrage an den Kunden versendet'):email==='failed'?'E-Mail-Versand fehlgeschlagen – bitte prüfen':email==='unknown'?'Versandausgang unklar – bitte prüfen':email==='not_available'?'Keine Kunden-E-Mail vorhanden':'Versand wird bearbeitet';
- const state=kind==='customer_acceptance'?'Bestätigung erhalten – Ausmessen abstimmen':sent;
- const at=new Date(kind==='customer_acceptance'?d.customerAcceptance?.confirmedAt:record.received_at).toLocaleString('de-CH',{timeZone:'Europe/Zurich'});
+ const corrected=d.customerAcceptance?.intent==='confirm_corrected_offer';
+ const state=declined?'Offerte vom Kunden abgelehnt':kind==='customer_acceptance'?(corrected?'Korrigierte Offerte bestätigt - Montage abstimmen':'Bestätigung erhalten – Ausmessen abstimmen'):sent;
+ const at=new Date(declined?d.customerDecline?.declinedAt:kind==='customer_acceptance'?d.customerAcceptance?.confirmedAt:record.received_at).toLocaleString('de-CH',{timeZone:'Europe/Zurich'});
  const measurements=(intake?.measurements||[]).map((m:any)=>(m.type==='window'?'Fenster':'Türen / Plissee')+': '+(m.mode==='dimensions'?m.quantity+' × '+m.width+' '+m.widthUnit+' × '+m.height+' '+m.heightUnit+' · ':'')+Number(m.areaM2).toLocaleString('de-CH',{maximumFractionDigits:4})+' m²');
  const details=[['Herkunft',source],['Eingang / Bestätigung',at],['Status',state],['Kunde',customer],['E-Mail',d.email||'Nicht angegeben'],['Telefon',d.phone||'Nicht angegeben'],['Adresse / PLZ',[d.address,d.postalCode].filter(Boolean).join(' · ')||'Nicht angegeben'],...(quote?[['Offertbetrag',money(quote.totalCHF)],['Offerte Nr.',offerNumber(record.id,Number(intake.version))]]:[])];
  const href=new URL('/admin?anfrage='+encodeURIComponent(record.id),baseURL).toString();
- const note=kind==='customer_acceptance'?'Der Kunde möchte auf Grundlage der Offerte fortfahren und das Ausmessen abstimmen. Masse und endgültige Vereinbarung werden noch geprüft.':intake?.manualReview?'Fachliche Prüfung erforderlich.':'';
+ const note=declined?'Der Kunde hat diese Offertversion ausdrücklich abgelehnt. Es wird kein Termin gebucht.':kind==='customer_acceptance'&&corrected?'Der Kunde hat die korrigierte Offerte nach dem Aufmass bestätigt. Die Montage kann jetzt abgestimmt werden.':kind==='customer_acceptance'?'Der Kunde möchte auf Grundlage der Offerte fortfahren und das Ausmessen abstimmen. Masse und endgültige Vereinbarung werden noch geprüft.':intake?.manualReview?'Fachliche Prüfung erforderlich.':'';
  const questions=(intake?.clarification||[]).map((q:any)=>typeof q==='string'?q:q.question);
  const html='<!doctype html><html lang="de-CH"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;background:#f5f7f3;font:15px/1.6 Arial,sans-serif;color:#24392b"><main style="max-width:650px;margin:24px auto;padding:28px;background:white;border:1px solid #e1e8dc"><small>GTT Insektenschutz · Interne Mitteilung</small><h1 style="font-size:25px">'+escape(title)+': '+escape(customer)+'</h1><p style="font-size:17px;color:#306e2c"><strong>'+escape(state)+'</strong></p>'+details.map(([label,value])=>'<p style="margin:10px 0"><small style="color:#667264">'+escape(label)+'</small><br><strong>'+escape(value)+'</strong></p>').join('')+(measurements.length?'<h2 style="font-size:17px">Masse</h2><p>'+measurements.map(escape).join('<br>')+'</p>':'')+(questions.length?'<h2 style="font-size:17px">Noch erforderlich</h2><ul>'+questions.map((q:string)=>'<li>'+escape(q)+'</li>').join('')+'</ul>':'')+(note?'<p>'+escape(note)+'</p>':'')+(d.request?'<h2 style="font-size:17px">Originalnachricht</h2><p style="white-space:pre-wrap">'+escape(d.request)+'</p>':'')+'<p style="margin-top:25px"><a href="'+escape(href)+'" style="display:inline-block;background:#3d862b;color:white;padding:12px 18px;text-decoration:none;border-radius:7px">Anfrage im Admin öffnen</a></p></main></body></html>';
  const text=[title+': '+customer,'',...details.map(([label,value])=>label+': '+value),'',...measurements,...questions,note,d.request||'','Anfrage im Admin öffnen: '+href].filter(Boolean).join('\n');
- return {subject:(kind==='customer_acceptance'?'Kundenbestätigung: ':'Neue Anfrage: ')+customer+' · '+source,html,text};
+ return {subject:(declined?'Offerte abgelehnt: ':kind==='customer_acceptance'?'Kundenbestätigung: ':'Neue Anfrage: ')+customer+' · '+source,html,text};
 }
-export async function notifyTeam(db:QueryDB,recordId:string,kind:'new_inquiry'|'customer_acceptance',context:any={},options:{fetch?:typeof fetch}={}){
+export async function notifyTeam(db:QueryDB,recordId:string,kind:'new_inquiry'|'customer_acceptance'|'customer_decline',context:any={},options:{fetch?:typeof fetch}={}){
  const runtime=context?.deploy?.context||env('GTT_RUNTIME_CONTEXT')||env('CONTEXT');
  if(runtime!=='production'||env('GTT_TEAM_NOTIFICATIONS')!=='enabled'||!env('RESEND_API_KEY'))return null;
  const {rows}=await db.query('SELECT id,source,received_at,document FROM gtt_records WHERE id=$1',[recordId]);const record=rows[0];if(!record)return null;

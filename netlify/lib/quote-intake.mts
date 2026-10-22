@@ -89,6 +89,12 @@ async function finishExisting(db:QueryDB,recordId:string,saved:any,context:any,o
   return {...snapshot,email:{status:outbox.status,...(outbox.provider_id?{providerId:outbox.provider_id}:{}),...(outbox.error_code?{errorCode:outbox.error_code}:{}),attempts:outbox.attempts},reference:message.reference,emailPreview:message};
 }
 
+export async function deliverPreparedQuote(db:QueryDB,recordId:string,version:number,context:any={},options:IntakeOptions={}){
+  const saved=(await db.query('SELECT version,snapshot FROM gtt_quote_versions WHERE record_id=$1 AND version=$2',[recordId,version])).rows[0];
+  if(!saved)throw new Error('Prepared offer not found');
+  return finishExisting(db,recordId,saved,context,options);
+}
+
 async function dispatchQuoteEmail(db:QueryDB,recordId:string,version:number,snapshot:any,message:ReturnType<typeof renderQuoteEmail>,options:IntakeOptions){
   const apiKey=env("RESEND_API_KEY");
   if(!apiKey) return;

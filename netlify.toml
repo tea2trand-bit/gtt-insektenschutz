@@ -2,6 +2,9 @@
   command = "npm run build"
   publish = "dist"
 
+[functions]
+  included_files = ["netlify/assets/fonts/DejaVuSans.ttf"]
+
 [[headers]]
   for = "/*.css"
   [headers.values]

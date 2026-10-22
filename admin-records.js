@@ -149,8 +149,8 @@
   }
   async function measurementCalculator(fromList=false){
     if(hasDirtyForm()){error(Error('Bitte zuerst Ihre Änderungen speichern.'));return;}
-    const r=selected,requestId=crypto.randomUUID(),rows=e('div'),total=e('div',{class:'record-note record-calculation-total',role:'status'}),proposal=e('div'),save=e('button',{type:'submit',class:'btn'},'Masse speichern');
-    const travelIncluded=e('input',{type:'checkbox',name:'travelIncluded'});travelIncluded.checked=r.document.intake?.quote?.travelCosts?.confirmedByAdmin===true;
+    const r=selected,isCorrection=['Ponuda poslata','Čeka odgovor','Prihvaćeno'].includes(canonical(r.document.status))||r.document.correctionPending===true,requestId=crypto.randomUUID(),rows=e('div'),total=e('div',{class:'record-note record-calculation-total',role:'status'}),proposal=e('div'),save=e('button',{type:'submit',class:'btn'},'Masse speichern');
+    const travelIncluded=e('input',{type:'checkbox',name:'travelIncluded'});travelIncluded.checked=r.document.intake?.quote?.travelCosts?.confirmedByAdmin===true&&Number(r.document.intake.quote.travelCosts.amountCHF)===0&&r.document.intake.quote.postalCode===((r.document.postalCode||'').match(/\b\d{4}\b/)?.[0]||'');
     const travelField=input('Anfahrtskosten (CHF, inkl. MwSt.)','travelAmountCHF','number',r.document.intake?.quote?.travelCosts?.amountCHF||'');
     const travelAmount=travelField.querySelector('input');travelAmount.disabled=travelIncluded.checked;
     const mode=e('select',{'aria-label':'Masse eingeben als'},e('option',{value:'dimensions'},'Breite × Höhe (cm)'),e('option',{value:'area'},'Gesamtflächen (m²)'));
@@ -162,7 +162,7 @@
     const travelPanel=e('details',{},e('summary',{},'Anfahrtskosten (optional)'),e('label',{class:'record-travel-confirmation'},travelIncluded,'Anfahrt inklusive'),travelField);
     const form=e('form',{id:'measurementForm',class:'record-appointment',novalidate:true,oninput:changed,onchange:changed,onsubmit:async ev=>{
       ev.preventDefault();if(busy||!validCalculation(true))return;busy=true;save.disabled=true;
-      try{const data=await api('/'+r.id+'/measurements',{method:'POST',json:{revision:r.revision,requestId,measurementSource:'admin_confirmed',...travelData(),measurements:measurements(),...(mode.value==='area'&&validRows()?{productionMeasurements:dimensionMeasurements()}:{})}});selected=data.record;renderCard();root.prepend(e('p',{class:'record-note',role:'status'},'✓ Masse und Offertentwurf gespeichert. Keine E-Mail versendet.'));root.scrollIntoView({block:'start'});}
+      try{const data=await api('/'+r.id+'/measurements',{method:'POST',json:{revision:r.revision,requestId,measurementSource:isCorrection?'onsite':'admin_confirmed',...travelData(),measurements:measurements(),...(mode.value==='area'&&validRows()?{productionMeasurements:dimensionMeasurements()}:{})}});selected=data.record;renderCard();const mail=data.record.document.intake?.email?.status;root.prepend(e('p',{class:'record-note',role:'status'},data.correction?(data.correction.priceChanged?(mail==='accepted'?'✓ Masse gespeichert. Korrigierte Offerte vom Maildienst angenommen.':mail==='preview_only'?'✓ Masse gespeichert. Korrigierte Offerte als lokale Vorschau vorbereitet.':mail==='draft'?'✓ Masse gespeichert. Korrigierte Offerte bleibt als Entwurf; offene Angaben bitte ergänzen.':'✓ Masse gespeichert. Versandstatus der korrigierten Offerte bitte prüfen.'):'✓ Masse gespeichert. Der Preis bleibt gleich; keine neue Offerte versendet.'):'✓ Masse und Offertentwurf gespeichert. Keine E-Mail versendet.'));root.scrollIntoView({block:'start'});}
       catch(err){total.textContent=err.message;}finally{busy=false;save.disabled=false;}
     }});
     function dimensionMeasurements(){return Array.from(rows.children).map(row=>({type:row.querySelector('[name=type]').value,quantity:Number(row.querySelector('[name=quantity]').value),width:Number(row.querySelector('[name=width]').value),height:Number(row.querySelector('[name=height]').value)}));}
@@ -197,6 +197,7 @@
       total.textContent='Preis wird berechnet …';
       try{const data=await api('/'+r.id+'/measurements',{method:'POST',json:{revision:r.revision,preview:true,...travelData(),measurements:measurements()}});if(run!==calculationRun||!form.isConnected)return;
         total.replaceChildren(e('p',{},'Fenster: '+data.quote.areas.fenster.toLocaleString('de-CH',{maximumFractionDigits:4})+' m² · Türen / Plissee: '+data.quote.areas.tueren.toLocaleString('de-CH',{maximumFractionDigits:4})+' m²'),e('strong',{},'Richtpreis inkl. MwSt.: '+money(data.quote.totalCHF)));
+        if(data.correction)total.append(e('p',{},data.correction.priceChanged?'Bisher: '+money(data.correction.previousTotalCHF)+' · Neue Offerte zur Bestätigung erforderlich.':'Preis unverändert · Keine neue Offerte erforderlich.'));
         const issues=(data.issues||[]).filter(i=>i.code!=='travel_cost_review'||!data.issues.some(q=>q.code==='missing_postal_code'));
         if(issues.length)total.append(e('ul',{},...issues.map(i=>e('li',{},issueText(i)))));
         if(data.quote.travelCosts.confirmedByAdmin&&data.quote.travelCosts.amountCHF)total.append(e('p',{},'Anfahrt enthalten: '+money(data.quote.travelCosts.amountCHF)));
@@ -210,10 +211,10 @@
       }
       row.querySelector('[name=quantity]').setAttribute('step','1');row.querySelector('[name=quantity]').setAttribute('min','1');rows.append(row);
     }
-    const existing=(r.document.intake?.productionMeasurements||r.document.intake?.measurements||[]).filter(m=>m.mode==='dimensions');
+    const existing=(r.document.onsite?.productionMeasurements?.length?r.document.onsite.productionMeasurements:r.document.onsite?.measurements||r.document.intake?.productionMeasurements||r.document.intake?.measurements||[]).filter(m=>m.mode==='dimensions');
     if(existing.length)existing.forEach(m=>addRow({...m,width:m.width*(m.widthUnit==='m'?100:m.widthUnit==='mm'?0.1:1),height:m.height*(m.heightUnit==='m'?100:m.heightUnit==='mm'?0.1:1)}));else addRow();
     for(const [type,key]of [['window','windowArea'],['door','doorArea']]){
-      const measured=(r.document.intake?.measurements||[]).filter(m=>m.type===type).reduce((sum,m)=>sum+m.areaM2,0);
+      const measured=(r.document.onsite?.measurements||r.document.intake?.measurements||[]).filter(m=>m.type===type).reduce((sum,m)=>sum+m.areaM2,0);
       const old=productText(r.document.products).match(type==='window'?/Fenster:\s*([\d.,]+)\s*m²/:/Türen:\s*([\d.,]+)\s*m²/);
       if(measured||old)areaFields.querySelector('[name='+key+']').value=measured||Number(old[1].replace(',','.'));
     }
@@ -223,7 +224,7 @@
     areaFields.hidden=mode.value!=='area';measureRows.hidden=mode.value!=='dimensions';
     function close(){if(form.dataset.dirty==='true'&&!confirm('Ungespeicherte Masse verwerfen?'))return;clearTimeout(timer);calculationRun++;if(fromList)load();else renderCard();}
     form.classList.add('record-measurement-form');
-    form.append(mode,measureRows,areaFields,proposal,detailPanel,travelPanel,total,e('div',{class:'record-actions'},save,btn('Abbrechen',close)),e('p',{class:'record-note'},'Speichert die Masse und einen Offertentwurf. Keine E-Mail wird versendet.'));
+    form.append(mode,measureRows,areaFields,proposal,detailPanel,travelPanel,total,e('div',{class:'record-actions'},save,btn('Abbrechen',close)),e('p',{class:'record-note'},isCorrection?'Bei geändertem Preis wird automatisch eine korrigierte Offerte zur Bestätigung versendet. Unveränderte Preise lösen keine neue E-Mail aus.':'Speichert die Masse und einen Offertentwurf. Keine E-Mail wird versendet.'));
     root.replaceChildren(e('div',{class:'record-head'},btn('← Zurück',close),e('span',{class:'record-note'},recordName(r))),e('h2',{class:'record-heading',tabindex:'-1'},'Ausmessen'),e('p',{class:'record-note'},'Masse vor Ort eintragen. Flächen und Richtpreis werden automatisch berechnet.'),form);
     if(r.document.request)detailPanel.append(e('p',{class:'record-note'},r.document.request));
     (mode.value==='area'?areaFields:rows).querySelector('input').focus();root.scrollIntoView({block:'start'});
@@ -251,7 +252,8 @@
     if(d.archivedAt)root.append(e('div',{class:'record-alert'},'Archiviert am '+date(d.archivedAt),btn('Wiederherstellen',()=>archiveRecord(r,true))));
     const amount=d.agreedPrice??d.quotedPrice??r.original.price;
     if(amount!=null)root.append(e('div',{class:'record-main-price'},e('span',{},d.customerAcceptance?.pricePreliminary?'Vorläufiger Offertbetrag':d.agreedPrice!=null?'Vereinbarter Betrag':'Offertbetrag'),e('strong',{},money(amount))));
-    if(d.customerAcceptance)root.append(e('p',{class:'record-note'},'Der Kunde möchte fortfahren. Masse und endgültige Vereinbarung müssen noch geprüft werden.'));
+    if(d.customerDecline)root.append(e('p',{class:'record-note'},'Der Kunde hat die Offerte online abgelehnt.'));
+    else if(d.customerAcceptance)root.append(e('p',{class:'record-note'},d.customerAcceptance.intent==='confirm_corrected_offer'?'Der Kunde hat die korrigierte Offerte nach dem Ausmessen bestätigt.':'Der Kunde möchte fortfahren. Masse und endgültige Vereinbarung müssen noch geprüft werden.'));
     const measurements=(d.intake?.measurements||[]).map(m=>(m.type==='window'?'Fenster':'Türen / Plissee')+': '+(m.mode==='dimensions'?m.quantity+' × '+m.width+' '+m.widthUnit+' × '+m.height+' '+m.heightUnit+' · ':'')+Number(m.areaM2).toLocaleString('de-CH',{maximumFractionDigits:4})+' m²').join('\n');
     root.append(e('section',{class:'record-request-summary'},e('strong',{},'Kundenanfrage'),e('p',{},measurements||productText(d.products)||'Masse noch nicht erfasst.'),d.request?e('p',{},d.request):null));
     if(d.intake)root.append(quoteSummary(d.intake));
@@ -260,7 +262,7 @@
       if(hasOpenComplaint(d))next.append(btn('Reklamation bearbeiten',()=>{const box=$('#recordComplaints');box.closest('details').open=true;box.scrollIntoView({block:'start',behavior:'smooth'});},''));
       if(legacy&&status!=='Završeno')next.append(btn('Abschliessen',()=>mutate({action:'historical-complete'}),'record-complete'));
       if(status==='Ponuda poslata')next.append(e('p',{class:'record-note'},'Die Offerte wurde versendet. Der Kunde kann sie über den Link in der E-Mail bestätigen.'));
-      else if(status==='Novi upit')next.append(btn('Ausmessen',()=>measurementCalculator(),''));
+      if(['Novi upit','Ponuda poslata','Prihvaćeno'].includes(status))next.append(btn('Ausmessen',()=>measurementCalculator(),''));
       if(status==='Prihvaćeno')next.append(btn(hasAppointment(d)?'Montagetermin ändern':'Montagetermin planen',schedule,''),btn('Montage beginnen',()=>mutate({action:'start-installation'}),'ghost'));
       if(status==='Montaža')next.append(btn('Auftrag abschliessen',()=>mutate({action:'complete'}),''));
       if(next.childNodes.length)root.append(next);
@@ -297,7 +299,7 @@
       const data=await api('/'+recordId+'/offer');
       const dialog=e('dialog',{class:'record-offer-dialog'});
       const frame=e('iframe',{title:'Kundenofferte',sandbox:'',style:'width:100%;height:70vh;border:0'});frame.srcdoc=data.html;
-      dialog.append(e('div',{class:'record-head'},e('strong',{},data.reference||'Offerte'),btn('Schliessen',()=>dialog.close())),frame);
+      dialog.append(e('div',{class:'record-head'},e('strong',{},data.reference||'Offerte'),...(data.pdfAvailable?[e('a',{class:'btn small',href:'/api/admin/records/'+encodeURIComponent(recordId)+'/offer?format=pdf',target:'_blank',rel:'noopener'},'PDF herunterladen')]:[]),btn('Schliessen',()=>dialog.close())),frame);
       dialog.addEventListener('close',()=>dialog.remove());document.body.append(dialog);dialog.showModal();
     }catch(err){error(err);}
   }

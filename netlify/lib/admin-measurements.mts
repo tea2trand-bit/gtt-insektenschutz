@@ -3,12 +3,18 @@ import {RecordError,readRecord,applyChange,type QueryDB} from './records.mts';
 import {priceExtraction} from './quote-pricing.mts';
 import {readOffer,projectsStore,type Offer} from './projects-store.mts';
 import type {Measurement} from './measurement-intake.mts';
+import {saveOnsiteCorrection,recoverOnsiteCorrection} from './onsite-correction.mts';
 
-type CalculationOptions={offer?:Offer;context?:any;documentOverride?:any;quoteBasis?:any;contactRefresh?:boolean};
+type CalculationOptions={offer?:Offer;context?:any;documentOverride?:any;quoteBasis?:any;contactRefresh?:boolean;fetch?:typeof fetch};
 export async function calculateMeasuredOffer(db:QueryDB,id:string,body:any,options:CalculationOptions={}){
   const record=await readRecord(db,id),d=options.documentOverride||record.document;
+  if(body.preview!==true&&/^[a-f0-9-]{36}$/i.test(body.requestId||'')){
+    const recovered=await recoverOnsiteCorrection(db,record,body,options);if(recovered)return recovered;
+  }
   if(!Number.isInteger(body.revision)||body.revision!==record.revision)throw new RecordError('Die Anfrage wurde geändert. Bitte neu öffnen.',409);
-  if(d.archivedAt||d.status!=='Novi upit')throw new RecordError('Masse können hier vor dem Versand der Offerte erfasst werden.',409);
+  const correction=!options.contactRefresh&&(['Ponuda poslata','Čeka odgovor','Prihvaćeno'].includes(d.status)||d.correctionPending===true);
+  if(d.archivedAt||d.status!=='Novi upit'&&!correction)throw new RecordError('Masse können vor dem Versand oder zur Korrektur einer offenen Offerte erfasst werden.',409);
+  if(correction&&!d.intake?.quote)throw new RecordError('Zu dieser Anfrage fehlt eine berechnete Offerte. Bitte zuerst die Offerte prüfen.',409);
   if(!Array.isArray(body.measurements)||!body.measurements.length||body.measurements.length>30)throw new RecordError('Bitte mindestens ein Fenster oder eine Tür erfassen.');
   const validateMeasurement=(m:any):Measurement=>{
     if(m.mode==='area'){
@@ -26,16 +32,24 @@ export async function calculateMeasuredOffer(db:QueryDB,id:string,body:any,optio
   const offer=options.offer||await readOffer(projectsStore(options.context));
   if(body.travelAmountCHF!==undefined&&(typeof body.travelAmountCHF!=='number'||!Number.isFinite(body.travelAmountCHF)||body.travelAmountCHF<0||body.travelAmountCHF>100000||body.travelIncluded===true&&body.travelAmountCHF!==0))throw new RecordError('Bitte die Anfahrtskosten als gültigen CHF-Betrag prüfen.');
   const travelAmountCHF=body.travelAmountCHF===undefined?undefined:Math.round(body.travelAmountCHF*100)/100;
-  const pricing=priceExtraction(extraction,'angebot',offer,new Date(),{travelIncluded:body.travelIncluded===true,travelAmountCHF});
+  const previousTravel=correction&&d.intake.quote.postalCode===postalCode&&d.intake.quote.travelCosts?.confirmedByAdmin?d.intake.quote.travelCosts:null;
+  const preserveTravel=previousTravel&&body.travelIncluded!==true&&travelAmountCHF===undefined;
+  const pricing=priceExtraction(extraction,'angebot',offer,new Date(),preserveTravel?{travelIncluded:previousTravel.amountCHF===0,travelAmountCHF:previousTravel.amountCHF}:{travelIncluded:body.travelIncluded===true,travelAmountCHF});
   const draftQuote={...(pricing.quote||pricing.calculation),priceKind:'indicative'};
+  if(correction){
+    const old=d.intake.quote,areas=draftQuote.areas,travel=Number(draftQuote.travelCosts.amountCHF)||0;
+    Object.assign(draftQuote,{rates:old.rates,baseRates:old.baseRates,discount:old.discount,pricingVersion:old.pricingVersion,totalCHF:Math.round((Math.round(areas.fenster*old.rates.fenster+areas.tueren*old.rates.tueren)+travel)*100)/100,baseTotalCHF:Math.round((Math.round(areas.fenster*old.baseRates.fenster+areas.tueren*old.baseRates.tueren)+travel)*100)/100});
+  }
   if(options.quoteBasis){
     const previous=options.quoteBasis,oldTravel=Number(previous.travelCosts?.amountCHF)||0,newTravel=Number(draftQuote.travelCosts.amountCHF)||0;
     Object.assign(draftQuote,{areas:previous.areas,rates:previous.rates,baseRates:previous.baseRates,discount:previous.discount,pricingVersion:previous.pricingVersion,totalCHF:Math.round((previous.totalCHF-oldTravel+newTravel)*100)/100,baseTotalCHF:Math.round((previous.baseTotalCHF-oldTravel+newTravel)*100)/100});
   }
-  if(body.preview===true)return {quote:draftQuote,issues:pricing.issues};
+  if(body.preview===true)return {quote:draftQuote,issues:pricing.issues,...(correction?{correction:{previousTotalCHF:d.intake.quote.totalCHF,priceChanged:draftQuote.totalCHF!==d.intake.quote.totalCHF}}:{})};
   if(!/^[a-f0-9-]{36}$/i.test(body.requestId||''))throw new RecordError('Bitte die Berechnung neu öffnen.');
+  if(correction)return saveOnsiteCorrection(db,record,body,draftQuote,measurements,productionMeasurements,pricing.issues,options);
   const fingerprint=createHash('sha256').update('onsite:'+id+':'+body.requestId).digest('hex');
   const snapshot={schemaVersion:'measurement-intake-v1',status:'priced',sourceFingerprint:fingerprint,processedAt:new Date().toISOString(),method:'deterministic',ai:{status:'not_needed',model:null},measurements,productionMeasurements,postalCode,clarification:pricing.issues,manualReview:pricing.manualReview,quote:draftQuote,estimate:null,customer:{name:d.name,company:d.company,email:d.email,phone:d.phone,address:d.address},email:{status:'draft'},contractAccepted:false};
+  if(options.contactRefresh&&d.intake?.correction)Object.assign(snapshot,{correction:d.intake.correction,quote:{...draftQuote,priceKind:'onsite'}});
   const products=measurements.map(m=>(m.type==='window'?'Fenster':'Türen / Plissee')+': '+(m.mode==='area'?m.areaM2+' m²':m.quantity+' × '+m.width+' × '+m.height+' cm')).join('\n');
   const dateKey=body.measurementSource==='admin_confirmed'?'dimensionsConfirmedAt':'measuredAt';
   const {rows}=await db.query(`WITH target AS MATERIALIZED (

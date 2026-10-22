@@ -4,6 +4,7 @@ import {renderQuoteEmail,offerNumber,legacyOfferNumber} from './quote-email.mts'
 import {calculateMeasuredOffer,refreshDraftContact} from './admin-measurements.mts';
 import {readRequestMeasurements} from './request-measurements.mts';
 import type {Offer} from './projects-store.mts';
+import {quotePDFResponse} from './quote-pdf.mts';
 const reply = (data:unknown,status=200) => Response.json(data,{status,headers:{"Cache-Control":"no-store", "X-Content-Type-Options":"nosniff"}});
 export async function recordsAPI(req: Request, db: QueryDB, path: string[], options:{offer?:Offer;context?:any}={}) {
   const id = path[0];
@@ -82,7 +83,11 @@ export async function recordsAPI(req: Request, db: QueryDB, path: string[], opti
     if(!version)throw new RecordError("Automatska ponuda još nije pripremljena.",404);
     const {rows}=await db.query('SELECT version,snapshot FROM gtt_quote_versions WHERE record_id=$1 AND version=$2',[id,version]);
     if(!rows[0])throw new RecordError("Verzija ponude nije pronađena.",404);
-    return reply(renderQuoteEmail(rows[0].snapshot,id,Number(rows[0].version),{baseURL:new URL(req.url).origin}));
+    if(new URL(req.url).searchParams.get('format')==='pdf'){
+      if(!rows[0].snapshot.quote)throw new RecordError('Automatska ponuda još nije pripremljena.',404);
+      return quotePDFResponse(rows[0].snapshot,id,Number(rows[0].version),new URL(req.url).origin);
+    }
+    return reply({...renderQuoteEmail(rows[0].snapshot,id,Number(rows[0].version),{baseURL:new URL(req.url).origin}),pdfAvailable:!!rows[0].snapshot.quote});
   }
   if (path[1] === "files") {
     await readRecord(db,id);

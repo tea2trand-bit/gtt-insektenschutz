@@ -45,6 +45,8 @@ export function recordMessageDE(message:string){
  const measurementMessages=[
   'Die Anfrage wurde geändert. Bitte neu öffnen.',
   'Masse können hier vor dem Versand der Offerte erfasst werden.',
+  'Masse können vor dem Versand oder zur Korrektur einer offenen Offerte erfasst werden.',
+  'Zu dieser Anfrage fehlt eine berechnete Offerte. Bitte zuerst die Offerte prüfen.',
   'Bitte mindestens ein Fenster oder eine Tür erfassen.',
   'Bitte eine gültige Gesamtfläche in m² eingeben.',
   'Bitte Anzahl, Breite und Höhe in cm prüfen.',
