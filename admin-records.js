@@ -69,14 +69,16 @@
     const counters=e('div',{class:'record-summary'});
     const steps=records.some(needsHistoricalReview)?['legacy_review',...STEPS]:STEPS;
     steps.map(s=>[s,STATUS[s]]).forEach(([s,label])=>counters.append(e('button',{type:'button',class:s===filter?'active':'','aria-pressed':String(s===filter),onclick:()=>{filter=s;montageFilter='';inquiryFilter='';complaintFilter='active';renderList();}},e('span',{},label),e('strong',{class:'record-kpi-value'},String(records.filter(r=>recordStage(r)===s).length+(s==='Reklamationen'&&!archived?complaintCases.filter(c=>c.status!=='Erledigt').length:0))))));
-    root.append(e('div',{class:'record-stage-bar'},counters,btn(archived?'← Aktive Anfragen':'Archiv',()=>{archived=!archived;filter=archived?'':'Novi upit';search='';load();})));
+    root.append(e('div',{class:'record-stage-bar'},counters));
+    const filterOptions=e('div',{class:'record-filter-options'});
+    root.append(e('div',{class:'record-filter-bar'},filterOptions,btn(archived?'← Aktive Anfragen':'Archiv',()=>{archived=!archived;filter=archived?'':'Novi upit';search='';load();})));
     if(filter==='legacy_review')root.append(e('p',{class:'record-note'},'Frühere Anfragen für Goran: prüfen und bereits erledigte Aufträge mit „Abschliessen“ nach „Abgeschlossen“ verschieben.'));
     if(filter==='Novi upit'){
       const phases=e('div',{class:'record-actions','aria-label':'Anfragebearbeitung'});
       for(const [value,label]of [['measure','Ausmessen erforderlich'],['review','Prüfung erforderlich']]){
         const count=records.filter(r=>recordStage(r)==='Novi upit'&&(value==='measure'?needsMeasurement(r.document):!needsMeasurement(r.document))).length;
         phases.append(btn(label+' '+count,()=>{inquiryFilter=inquiryFilter===value?'':value;renderList();},inquiryFilter===value?'small':'ghost small'));
-      }root.append(phases);
+      }filterOptions.append(phases);
     }
     if(filter==='Montaža'){
       const phases=e('div',{class:'record-actions record-montage-filters','aria-label':'Montagestatus'});
@@ -85,9 +87,9 @@
         const button=btn(label+' '+count,()=>{montageFilter=montageFilter===value?'':value;drawRows();phases.querySelectorAll('button').forEach(b=>{const active=b.dataset.montageFilter===montageFilter;b.setAttribute('aria-pressed',String(active));b.classList.toggle('ghost',!active);});},montageFilter===value?'small':'ghost small');
         button.dataset.montageFilter=value;button.setAttribute('aria-pressed',String(montageFilter===value));phases.append(button);
       }
-      root.append(phases);
+      filterOptions.append(phases);
     }
-    if(filter==='Reklamationen'&&!archived)root.append(e('div',{class:'record-actions'},...[['active','Offen / in Bearbeitung'],['Erledigt','Erledigt']].map(([value,label])=>btn(label,()=>{complaintFilter=value;renderList();},complaintFilter===value?'small':'ghost small'))));
+    if(filter==='Reklamationen'&&!archived)filterOptions.append(e('div',{class:'record-actions'},...[['active','Offen / in Bearbeitung'],['Erledigt','Erledigt']].map(([value,label])=>btn(label,()=>{complaintFilter=value;renderList();},complaintFilter===value?'small':'ghost small'))));
     root.append(e('div',{class:'record-toolbar'},e('input',{'aria-label':'Anfragen durchsuchen',placeholder:'Name, Kontakt oder Offertnummer suchen',value:search,oninput:ev=>{search=ev.target.value;drawRows();}}),offerSummary?e('section',{class:'record-offer-summary','aria-label':'Gesamtwert aktiver Offerten'},e('span',{},offerSummary.count+' Offerten'),e('strong',{},money(offerSummary.total))):null),e('div',{id:'recordRows',class:'record-list'}));drawRows();
   }
   function drawRows(){
