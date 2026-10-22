@@ -90,7 +90,7 @@ async function handle(req){
     if(route==='login'&&req.method==='POST'){const d=await req.json();return checkPassword(d.password)?json({token:issueToken()}):json({error:'Pogrešna lozinka.'},401);}
     if(!verifyRequest(req))return json({error:'Prijavi se.'},401);
     if(route==='complaints'||route.startsWith('complaints/'))return complaintsAdminAPI(req,db,route.split('/').slice(1));
-    if(route==='records'||route.startsWith('records/'))return recordsAPI(req,db,route.split('/').slice(1),{offer});
+    if(route==='records'||route.startsWith('records/'))return recordsAPI(req,db,route.split('/').slice(1),{offer,context:{deploy:{context:'dev'}}});
     // Existing gallery/offer are represented by isolated preview fixtures.
     if(route==='items')return json({items:gallery});
     if(route==='offer'){if(req.method==='PUT')offer=await req.json();return json({offer,today:new Date().toISOString().slice(0,10),current:offer.active});}

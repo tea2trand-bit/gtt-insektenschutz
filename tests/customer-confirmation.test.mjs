@@ -55,7 +55,7 @@ test('internal email reports source, customer, price and actual send state; rese
   await processQuoteIntake(db,input.id,input.original.fields,context,{mode:'preview',offer,useAI:false});
   await db.query("UPDATE gtt_records SET document=jsonb_set(document,'{intake,email}','{\"status\":\"accepted\",\"providerId\":\"test-id\"}'::jsonb) WHERE id=$1",[input.id]);
   const record=await readRecord(db,input.id),message=renderTeamNotification(record);
-  assert.match(message.subject,/Neue Anfrage:/);assert.match(message.html,/Kontaktformular/);assert.match(message.html,/Offerte an den Kunden versendet/);assert.match(message.html,/Anfrage im Admin öffnen/);assert.doesNotMatch(message.html,/<script>/);assert.doesNotMatch(message.html,/Record Source|Inquiry:/);
+  assert.match(message.subject,/Neue Anfrage/);assert.match(message.html,/Kontaktformular/);assert.match(message.html,/Offerte wurde an den Kunden versendet/);assert.match(message.html,/Karte öffnen/);assert.doesNotMatch(message.html,/<script>/);assert.doesNotMatch(message.html,/Record Source|Inquiry:/);
   let sent=0;const provider=async(url,options)=>{sent++;const body=JSON.parse(options.body);assert.deepEqual(body.to,['team1@example.invalid','team2@example.invalid']);assert.ok(options.headers['Idempotency-Key']);return Response.json({id:'team-provider-id'});};
   const prod={deploy:{context:'production'}};await Promise.all([notifyTeam(db,input.id,'new_inquiry',prod,{fetch:provider}),notifyTeam(db,input.id,'new_inquiry',prod,{fetch:provider})]);await notifyTeam(db,input.id,'new_inquiry',prod,{fetch:provider});assert.equal(sent,1);
   const job=(await db.query('SELECT * FROM gtt_team_outbox')).rows[0];assert.equal(job.status,'accepted');assert.equal(job.provider_id,'team-provider-id');

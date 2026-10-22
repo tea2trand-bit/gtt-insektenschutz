@@ -58,7 +58,7 @@
       if(filter==='legacy_review'&&!records.some(needsHistoricalReview))filter='Novi upit';
       if(!deepLinkResolved&&!archived&&records.some(needsHistoricalReview)&&!records.some(r=>recordStage(r)==='Novi upit'))filter='legacy_review';
       renderList();
-      if(!deepLinkResolved){deepLinkResolved=true;const params=new URL(location.href).searchParams,id=params.get('anfrage'),complaint=params.get('reklamation');if(/^[a-f0-9-]{36}$/i.test(complaint||''))await openComplaint(complaint);else if(/^GTT-[a-f0-9]{24}$/.test(id||''))await open(id);}
+      if(!deepLinkResolved){deepLinkResolved=true;const params=new URL(location.href).searchParams,id=params.get('anfrage'),complaint=params.get('reklamation');if(/^[a-f0-9-]{36}$/i.test(complaint||''))await openComplaint(complaint);else if(/^GTT-[a-f0-9]{24}$/.test(id||''))await open(id);else if(params.has('offerte')){const resolved=await api('/resolve?offerte='+encodeURIComponent(params.get('offerte')));await open(resolved.id);}}
     }catch(err){root.replaceChildren(e('h2',{},'Anfragen'),e('p',{class:'record-error'},err.message),btn('Erneut versuchen',load));}
   }
   async function open(id,target=''){try{selected=(await api('/'+id)).record;renderCard();if(target==='measurements'){await measurementCalculator(true);return;}root.scrollIntoView({block:'start'});$('.record-heading').focus({preventScroll:true});}catch(err){error(err);}}
@@ -257,6 +257,7 @@
     const measurements=(d.intake?.measurements||[]).map(m=>(m.type==='window'?'Fenster':'Türen / Plissee')+': '+(m.mode==='dimensions'?m.quantity+' × '+m.width+' '+m.widthUnit+' × '+m.height+' '+m.heightUnit+' · ':'')+Number(m.areaM2).toLocaleString('de-CH',{maximumFractionDigits:4})+' m²').join('\n');
     root.append(e('section',{class:'record-request-summary'},e('strong',{},'Kundenanfrage'),e('p',{},measurements||productText(d.products)||'Masse noch nicht erfasst.'),d.request?e('p',{},d.request):null));
     if(d.intake)root.append(quoteSummary(d.intake));
+    if(d.billing)showInvoiceSummary(r);
     if(!d.archivedAt){
       const next=e('section',{class:'record-next-step'});
       if(hasOpenComplaint(d))next.append(btn('Reklamation bearbeiten',()=>{const box=$('#recordComplaints');box.closest('details').open=true;box.scrollIntoView({block:'start',behavior:'smooth'});},''));
@@ -264,7 +265,7 @@
       if(status==='Ponuda poslata')next.append(e('p',{class:'record-note'},'Die Offerte wurde versendet. Der Kunde kann sie über den Link in der E-Mail bestätigen.'));
       if(['Novi upit','Ponuda poslata','Prihvaćeno'].includes(status))next.append(btn('Ausmessen',()=>measurementCalculator(),''));
       if(status==='Prihvaćeno')next.append(btn(hasAppointment(d)?'Montagetermin ändern':'Montagetermin planen',schedule,''),btn('Montage beginnen',()=>mutate({action:'start-installation'}),'ghost'));
-      if(status==='Montaža')next.append(btn('Auftrag abschliessen',()=>mutate({action:'complete'}),''));
+      if(status==='Montaža')next.append(btn('Auftrag abschliessen',finishInstallation,''));
       if(next.childNodes.length)root.append(next);
       if(hasAppointment(d))root.append(e('p',{class:'record-appointment'},e('strong',{},'Montage: '+appointmentText(d)),d.appointmentNote?e('span',{},' · '+d.appointmentNote):null));
     }
@@ -294,12 +295,36 @@
     const d=selected.document;
     const form=e('form',{class:'record-appointment',onsubmit:async ev=>{ev.preventDefault();await mutate({action:'appointment',...Object.fromEntries(new FormData(form))});}},e('h3',{},'Montagetermin'),e('div',{class:'record-fields'},input('Datum','date','date',d.appointmentAt||today(),true),input('Uhrzeit','time','time',d.appointmentTime||'',true),input('Notiz (optional)','note','text',d.appointmentNote||'')),e('p',{class:'record-note'},'Schweizer Ortszeit. Der Termin wird intern gespeichert.'),e('button',{type:'submit',class:'btn'},'Termin speichern'));$('#inlineAction').replaceChildren(form);form.querySelector('input').focus();
   }
+  async function invoiceAction(path,body,message){
+    if(busy||hasDirtyForm()){if(hasDirtyForm())error(Error('Bitte zuerst Ihre Änderungen speichern.'));return;}
+    busy=true;root.querySelectorAll('button').forEach(b=>b.disabled=true);
+    try{const result=await api('/'+selected.id+path,{method:'POST',json:{...body,revision:selected.revision}});selected=result.record;renderCard();const delivery=result.invoice?.delivery_status;root.prepend(e('p',{class:'record-note',role:'status'},message+(delivery==='preview_only'?' Lokale Vorschau · keine E-Mail versendet.':delivery==='accepted'?' E-Mail vom Versanddienst angenommen.':' Versand noch nicht bestätigt; Status in der Rechnung prüfen.')));}catch(err){error(err);}finally{busy=false;root.querySelectorAll('button').forEach(b=>b.disabled=false);}
+  }
+  function finishInstallation(){
+    if(hasDirtyForm()){error(Error('Bitte zuerst Ihre Änderungen speichern.'));return;}
+    const d=selected.document,total=d.agreedPrice,paid=(d.payments||[]).reduce((n,p)=>n+Number(p.amount),0),remaining=Math.round((total-paid)*100)/100,requestId=crypto.randomUUID();
+    const form=e('form',{class:'record-appointment'}),method=e('select',{'aria-label':'Zahlungsart'},e('option',{value:'bank'},'Rechnung / Banküberweisung'),e('option',{value:'cash'},'Bar'),e('option',{value:'twint'},'TWINT')),received=e('input',{type:'checkbox'}),confirmation=e('label',{},received,' Ich bestätige: '+money(remaining)+' wurde erhalten.'),submit=e('button',{type:'submit',class:'btn'},'Rechnung erstellen und senden');
+    const change=()=>{confirmation.hidden=method.value==='bank';received.required=method.value!=='bank';submit.textContent=method.value==='bank'?'Rechnung erstellen und senden':'Zahlung bestätigen und Rechnung senden';};method.addEventListener('change',change);change();
+    form.append(e('h3',{},'Montage abschliessen'),e('p',{},'Bestätigte Offerte: '+money(total)+(paid?' · Bereits bezahlt: '+money(paid):'')),e('p',{},'Offen: '+money(remaining)),e('label',{},'Zahlungsart',method),confirmation,e('p',{class:'record-note'},'Die Rechnung wird als PDF an '+d.email+' gesendet. Der Auftrag wechselt nach Abgeschlossen.'),submit,btn('Abbrechen',()=>form.remove()));
+    form.addEventListener('submit',ev=>{ev.preventDefault();invoiceAction('/complete-invoice',{requestId,method:method.value,paymentReceived:received.checked},'✓ Montage abgeschlossen und Rechnung erstellt.');});$('#inlineAction').replaceChildren(form);form.scrollIntoView({block:'center',behavior:'smooth'});
+  }
+  async function showInvoiceSummary(r){
+    const box=e('section',{class:'record-quote-summary'},e('h3',{},'Rechnung '+r.document.billing.number));root.append(box);
+    try{const {invoice}=await api('/'+r.id+'/invoice');if(!box.isConnected)return;const paid=(r.document.payments||[]).reduce((n,p)=>n+Number(p.amount),0),remaining=Math.max(0,Math.round((invoice.snapshot.totalCHF-paid)*100)/100),status={preview_only:'Lokale Vorschau · nicht versendet',queued:'Versand ausstehend',processing:'Versand wird bearbeitet',accepted:'E-Mail vom Versanddienst angenommen',failed:'Versand fehlgeschlagen',unknown:'Versandausgang unklar · bitte vor erneutem Versand prüfen'};
+      box.append(e('p',{},remaining?'Offen: '+money(remaining):'Bezahlt · '+({cash:'Bar',twint:'TWINT',bank:'Banküberweisung'}[invoice.method])),e('p',{class:'record-note'},status[invoice.delivery_status]||'Versandstatus prüfen'),btn('Rechnung als PDF',()=>downloadPDF(r.id,'invoice',invoice.number)));
+      if(remaining&&!r.document.archivedAt)box.append(btn('Bankzahlung erhalten',()=>{if(confirm('Den Eingang von '+money(remaining)+' auf dem Bankkonto geprüft?'))invoiceAction('/invoice',{action:'confirm-payment',paymentReceived:true},'✓ Zahlungseingang gespeichert.');}));
+      if(['queued','failed','unknown'].includes(invoice.delivery_status))box.append(btn('Versand erneut prüfen',()=>invoiceAction('/invoice',{action:'retry'},'Versand geprüft.')));
+    }catch(err){box.append(e('p',{class:'record-error'},err.message));}
+  }
+  async function downloadPDF(recordId,kind,name){
+    try{const blob=await api('/'+recordId+'/'+kind+'?format=pdf',{file:true}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name+'.pdf';a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);}catch(err){error(err);}
+  }
   async function showOffer(recordId){
     try{
       const data=await api('/'+recordId+'/offer');
       const dialog=e('dialog',{class:'record-offer-dialog'});
       const frame=e('iframe',{title:'Kundenofferte',sandbox:'',style:'width:100%;height:70vh;border:0'});frame.srcdoc=data.html;
-      dialog.append(e('div',{class:'record-head'},e('strong',{},data.reference||'Offerte'),...(data.pdfAvailable?[e('a',{class:'btn small',href:'/api/admin/records/'+encodeURIComponent(recordId)+'/offer?format=pdf',target:'_blank',rel:'noopener'},'PDF herunterladen')]:[]),btn('Schliessen',()=>dialog.close())),frame);
+      dialog.append(e('div',{class:'record-head'},e('strong',{},data.reference||'Offerte'),...(data.pdfAvailable?[btn('PDF herunterladen',()=>downloadPDF(recordId,'offer',data.reference||'Offerte'),'small')]:[]),btn('Schliessen',()=>dialog.close())),frame);
       dialog.addEventListener('close',()=>dialog.remove());document.body.append(dialog);dialog.showModal();
     }catch(err){error(err);}
   }

@@ -50,6 +50,11 @@ const dates = ["offerSentAt", "decisionDate", "measuredAt", "orderedAt", "appoin
 export function applyChange(current: any, body: any, today = new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Zurich'})) {
   const d = structuredClone(current);
   const kind = body.action || "update";
+  if(d.billing){
+    if(!['update','archive','restore','complaint'].includes(kind))throw new RecordError('Für diesen Auftrag existiert bereits eine Rechnung. Bitte die Rechnungsaktionen verwenden.',409);
+    if(kind==='update'&&Object.keys(body.patch||{}).some(k=>!['name','company','email','phone','channel','address','postalCode','notes','workNotes'].includes(k)))throw new RecordError('Die ausgestellte Rechnung und ihr Betrag können nicht überschrieben werden.',409);
+  }
+  if(kind==='complete'&&d.intake?.quote)throw new RecordError('Bitte den Auftrag mit der Zahlungsart Rechnung, Bar oder TWINT abschliessen.');
   if(d.archivedAt&&!['archive','restore'].includes(kind))throw new RecordError("Upit je uklonjen iz aktivne evidencije. Prvo ga vrati iz arhive.",409);
   if(kind==='archive'){
     if(d.archivedAt)throw new RecordError("Upit je već u arhivi.",409);
@@ -130,6 +135,7 @@ export function applyChange(current: any, body: any, today = new Date().toLocale
 export interface QueryDB { query: (sql: string, params?: any[]) => Promise<{ rows: any[] }> }
 export async function deleteArchivedTestRecord(db: QueryDB,id:string,revision:number){
   const current=await readRecord(db,id);
+  if(current.document.billing)throw new RecordError('Eine ausgestellte Rechnung bleibt zusammen mit dem Auftrag erhalten.',409);
   if(!Number.isInteger(revision)||revision!==current.revision)throw new RecordError("Karton je u međuvremenu izmenjen. Osveži ga pre čuvanja.",409);
   if(!current.document.archivedAt||current.document.isTest!==true)throw new RecordError("Trajno uklanjanje važi samo za arhivirane TEST upite.",403);
   // One statement is atomic. Recheck state under the row lock and remove dependent
