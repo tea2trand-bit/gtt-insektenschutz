@@ -69,7 +69,7 @@ export function applyChange(current: any, body: any, today = new Date().toLocale
     if(!['Prihvaćeno','Montaža'].includes(d.status))throw new RecordError('Nur angenommene Aufträge oder laufende Montagen können storniert werden.',409);
     const reason=text(body.reason,2000);
     d.orderCancellation={cancelledAt:new Date().toISOString(),previousStatus:d.status,previousDecisionDate:d.decisionDate,quoteVersion:d.intake?.version||null,reason};
-    d.status='Odbijeno';d.decisionDate=today;d.decisionReason=body.reason===undefined?'Auftrag nach Zusage storniert':reason;
+    d.status='Odbijeno';d.decisionDate=today;d.decisionReason=body.reason===undefined?(kind==='cancel-order'?'Auftrag nach Zusage storniert':d.decisionReason):reason;
     if(d.appointmentAt&&d.appointmentStatus!=='cancelled'){
       d.appointmentStatus='cancelled';d.appointmentCancelledAt=new Date().toISOString();d.appointmentCancelReason='Auftrag storniert';
     }
@@ -98,8 +98,8 @@ export function applyChange(current: any, body: any, today = new Date().toLocale
       d.appointmentStatus='cancelled';d.appointmentCancelledAt=new Date().toISOString();d.appointmentCancelReason='Posao je odbijen';
     }
   } else if (kind === "appointment") {
-    if(d.orderCancellation&&!d.orderCancellation.reopenedAt)throw new RecordError('Dieser Auftrag wurde storniert.',409);
     if(!['Prihvaćeno','Montaža'].includes(d.status))throw new RecordError("Prvo zabeleži da je posao dogovoren.");
+    if(d.orderCancellation&&!d.orderCancellation.reopenedAt)throw new RecordError('Dieser Auftrag wurde storniert.',409);
     const at=date(body.date),time=text(body.time,5);
     if(!at||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))throw new RecordError("Izaberi datum i vreme montaže.");
     d.appointmentAt=at;d.appointmentTime=time;d.appointmentNote=text(body.note,2000);d.appointmentStatus='scheduled';
