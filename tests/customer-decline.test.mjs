@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile,readdir} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
-import {fromSubmission,createRecord,readRecord,changeRecord} from '../netlify/lib/records.mts';
-import {processQuoteIntake} from '../netlify/lib/quote-intake.mts';
+import {fromSubmission,createRecord,readRecord,changeRecord,applyChange} from '../netlify/lib/records.mts';
+import {processQuoteIntake,deliverPreparedQuote} from '../netlify/lib/quote-intake.mts';
 import {renderQuoteEmail} from '../netlify/lib/quote-email.mts';
 import {handleOfferAcceptance} from '../netlify/functions/offer-acceptance.mts';
 import {notifyTeam,renderTeamNotification} from '../netlify/lib/team-notification.mts';
@@ -49,21 +49,35 @@ test('accepted order can be cancelled visibly, removes appointment and blocks ol
  let record=await readRecord(db,input.id);
  record=await changeRecord(db,input.id,{revision:record.revision,action:'appointment',date:'2026-11-05',time:'10:30'});
  const before=record,versions=(await db.query('SELECT * FROM gtt_quote_versions')).rows;
- const cancelled=await changeRecord(db,input.id,{revision:record.revision,action:'cancel-order',reason:'Kunde möchte den Auftrag nicht mehr ausführen.'});
+ await assert.rejects(changeRecord(db,input.id,{revision:record.revision,action:'cancel-order'}),/ausdrücklich bestätigen/);
+ const cancelled=await changeRecord(db,input.id,{revision:record.revision,action:'cancel-order',confirmCancellation:true,reason:'Kunde möchte den Auftrag nicht mehr ausführen.'});
  assert.equal(cancelled.document.status,'Odbijeno');assert.equal(cancelled.document.appointmentStatus,'cancelled');assert.equal(cancelled.document.appointmentCancelReason,'Auftrag storniert');assert.equal(cancelled.document.orderCancellation.previousStatus,'Prihvaćeno');assert.equal(cancelled.document.orderCancellation.quoteVersion,before.document.intake.version);assert.equal(cancelled.document.orderCancellation.reason,'Kunde möchte den Auftrag nicht mehr ausführen.');assert.ok(cancelled.document.orderCancellation.cancelledAt);
  assert.deepEqual(cancelled.document.customerAcceptance,before.document.customerAcceptance);assert.deepEqual(cancelled.original,before.original);assert.deepEqual(cancelled.document.intake,before.document.intake);assert.equal(cancelled.document.agreedPrice,before.document.agreedPrice);assert.deepEqual((await db.query('SELECT * FROM gtt_quote_versions')).rows,versions);assert.equal(cancelled.history.filter(h=>h.kind==='cancel-order').length,1);
  for(const req of [new Request(message.acceptanceURL),post(message.acceptanceURL,'confirm=yes&decision=accept'),post(message.declineURL)]){const response=await handleOfferAcceptance(req,context,db);assert.equal(response.status,410);assert.match(await response.text(),/Auftrag wurde storniert/);}
  assert.equal((await readRecord(db,input.id)).revision,cancelled.revision);assert.equal((await db.query('SELECT count(*)::int AS n FROM gtt_team_outbox')).rows[0].n,0);
+ await db.query("UPDATE gtt_quote_outbox SET status='queued' WHERE record_id=$1",[input.id]);process.env.RESEND_API_KEY='test-only';let sent=0;
+ try{await deliverPreparedQuote(db,input.id,cancelled.document.intake.version,{deploy:{context:'production'}},{fetch:async()=>{sent++;return Response.json({id:'must-not-send'});}});}finally{delete process.env.RESEND_API_KEY;}
+ assert.equal(sent,0);
  for(const action of [{action:'start-installation'},{action:'appointment',date:'2026-11-05',time:'11:00'},{action:'cancel-order'}])await assert.rejects(changeRecord(db,input.id,{revision:cancelled.revision,...action}));
  const reopened=await changeRecord(db,input.id,{revision:cancelled.revision,action:'decision',status:'Prihvaćeno'});assert.ok(reopened.document.orderCancellation.reopenedAt);assert.equal(reopened.document.appointmentStatus,'cancelled');assert.equal(reopened.document.status,'Prihvaćeno');
  const working=await changeRecord(db,input.id,{revision:reopened.revision,action:'start-installation'});
- for(const action of [{action:'cancel-order'},{action:'decision',status:'Odbijeno'}])await assert.rejects(changeRecord(db,input.id,{revision:working.revision,...action}),/vor Montagebeginn/);
- assert.equal((await readRecord(db,input.id)).document.status,'Montaža');
+ const cancelledDuringWork=await changeRecord(db,input.id,{revision:working.revision,action:'cancel-order',confirmCancellation:true});
+ assert.equal(cancelledDuringWork.document.status,'Odbijeno');assert.equal(cancelledDuringWork.document.orderCancellation.previousStatus,'Montaža');
 });
-test('existing manual decline of an accepted order also records cancellation; completed and invoiced work cannot use the cancellation shortcut',async t=>{
+test('manual decline records cancellation; completed cards archive and invoiced cards require invoice cancellation',async t=>{
  const {db,input,message}=await setup(t);await handleOfferAcceptance(post(message.acceptanceURL,'confirm=yes&decision=accept'),context,db);
  let r=await readRecord(db,input.id);r=await changeRecord(db,input.id,{revision:r.revision,action:'decision',status:'Odbijeno'});assert.ok(r.document.orderCancellation);assert.equal((await handleOfferAcceptance(new Request(message.acceptanceURL),context,db)).status,410);
  r=await changeRecord(db,input.id,{revision:r.revision,action:'decision',status:'Prihvaćeno'});r=await changeRecord(db,input.id,{revision:r.revision,action:'start-installation'});
- await db.query("UPDATE gtt_records SET document=jsonb_set(document,'{status}','\"Završeno\"') WHERE id=$1",[input.id]);await assert.rejects(changeRecord(db,input.id,{revision:r.revision,action:'cancel-order'}),/Nur angenommene/);
- await db.query("UPDATE gtt_records SET document=document||'{\"status\":\"Montaža\",\"billing\":{\"number\":\"fixture\"}}'::jsonb WHERE id=$1",[input.id]);await assert.rejects(changeRecord(db,input.id,{revision:r.revision,action:'cancel-order'}),/Rechnungsaktionen/);
+ await db.query("UPDATE gtt_records SET document=jsonb_set(document,'{status}','\"Završeno\"') WHERE id=$1",[input.id]);r=await changeRecord(db,input.id,{revision:r.revision,action:'cancel-order',confirmCancellation:true});assert.ok(r.document.archivedAt);assert.equal(r.document.status,'Završeno');
+ await db.query("UPDATE gtt_records SET document=document||'{\"status\":\"Završeno\",\"billing\":{\"number\":\"fixture\"}}'::jsonb WHERE id=$1",[input.id]);await assert.rejects(changeRecord(db,input.id,{revision:r.revision,action:'cancel-order',confirmCancellation:true}),/Rechnungsaktionen/);
+});
+
+test('temporary cancellation is supported in all stages after confirmation and preserves source data',()=>{
+ for(const status of ['Novi upit','Ponuda poslata','Čeka odgovor','Prihvaćeno','Montaža','Odbijeno','Završeno']){
+  const d={status,name:'TEST',request:'Customer request',payments:[{amount:10}],decisionDate:'2026-10-22'};
+  assert.throws(()=>applyChange(d,{action:'cancel-order'}),/ausdrücklich bestätigen/);
+  const result=applyChange(d,{action:'cancel-order',confirmCancellation:true}).document;
+  assert.equal(result.request,d.request);assert.deepEqual(result.payments,d.payments);
+  if(['Odbijeno','Završeno'].includes(status)){assert.ok(result.archivedAt);assert.equal(result.status,status);}else{assert.equal(result.status,'Odbijeno');assert.equal(result.orderCancellation.previousStatus,status);}
+ }
 });

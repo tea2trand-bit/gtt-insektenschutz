@@ -255,7 +255,7 @@
     if(d.archivedAt)root.append(e('div',{class:'record-alert'},'Archiviert am '+date(d.archivedAt),btn('Wiederherstellen',()=>archiveRecord(r,true))));
     const amount=d.agreedPrice??d.quotedPrice??r.original.price;
     if(amount!=null)root.append(e('div',{class:'record-main-price'},e('span',{},d.customerAcceptance?.pricePreliminary?'Vorläufiger Offertbetrag':d.agreedPrice!=null?'Vereinbarter Betrag':'Offertbetrag'),e('strong',{},money(amount))));
-    if(orderCancelled(d))root.append(e('p',{class:'record-note'},'Auftrag nach Zusage storniert. Der Eintrag steht unter Abgelehnt; ein geplanter Montagetermin ist aufgehoben.'));
+    if(orderCancelled(d))root.append(e('p',{class:'record-note'},'Storniert. Der Eintrag steht unter Abgelehnt; ein geplanter Montagetermin ist aufgehoben.'));
     else if(d.customerDecline)root.append(e('p',{class:'record-note'},'Der Kunde hat die Offerte online abgelehnt.'));
     else if(d.customerAcceptance)root.append(e('p',{class:'record-note'},d.customerAcceptance.intent==='confirm_corrected_offer'?'Der Kunde hat die korrigierte Offerte nach dem Ausmessen bestätigt.':'Der Kunde möchte fortfahren. Masse und endgültige Vereinbarung müssen noch geprüft werden.'));
     const measurements=(d.intake?.measurements||[]).map(m=>(m.type==='window'?'Fenster':'Türen / Plissee')+': '+(m.mode==='dimensions'?m.quantity+' × '+m.width+' '+m.widthUnit+' × '+m.height+' '+m.heightUnit+' · ':'')+Number(m.areaM2).toLocaleString('de-CH',{maximumFractionDigits:4})+' m²').join('\n');
@@ -269,8 +269,8 @@
       if(status==='Ponuda poslata')next.append(e('p',{class:'record-note'},'Die Offerte wurde versendet. Der Kunde kann sie über den Link in der E-Mail bestätigen.'));
       if(['Novi upit','Ponuda poslata','Prihvaćeno'].includes(status))next.append(btn('Ausmessen',()=>measurementCalculator(),''));
       if(status==='Prihvaćeno')next.append(btn(hasAppointment(d)?'Montagetermin ändern':'Montagetermin planen',schedule,''),btn('Montage beginnen',()=>mutate({action:'start-installation'}),'ghost'));
-      if(status==='Prihvaćeno'&&!d.billing)next.append(btn('Auftrag stornieren',cancelOrder,'ghost'));
       if(status==='Montaža')next.append(btn('Montage abschliessen',billingAvailable&&d.intake?.quote?finishInstallation:()=>mutate({action:'complete'}),''));
+      next.append(btn('Stornieren',cancelOrder,'ghost record-cancel'));
       if(next.childNodes.length)root.append(next);
       if(hasAppointment(d))root.append(e('p',{class:'record-appointment'},e('strong',{},'Montage: '+appointmentText(d)),d.appointmentNote?e('span',{},' · '+d.appointmentNote):null));
     }
@@ -291,10 +291,11 @@
   }
   function cancelOrder(){
     if(hasDirtyForm()){error(Error('Bitte zuerst Ihre Änderungen speichern.'));return;}
-    const form=e('form',{class:'record-appointment'});
-    form.append(e('h3',{},'Auftrag stornieren'),e('p',{},'Der Auftrag wechselt von Angenommen nach Abgelehnt. Ein geplanter Montagetermin wird aufgehoben. Bisherige Angaben bleiben gespeichert.'),input('Grund (optional)','reason','text',''),e('button',{type:'submit',class:'btn'},'Stornierung bestätigen'),btn('Abbrechen',()=>form.remove()));
-    if((selected.document.payments||[]).length)form.append(e('p',{class:'record-note'},'Bereits erfasste Zahlungen bleiben erhalten. Eine Rückzahlung wird nicht ausgelöst.'));
-    form.addEventListener('submit',async ev=>{ev.preventDefault();await mutate({action:'cancel-order',reason:new FormData(form).get('reason')});});$('#inlineAction').replaceChildren(form);form.scrollIntoView({block:'center',behavior:'smooth'});
+    const d=selected.document,archiveOnly=!d.billing&&['Odbijeno','Završeno'].includes(d.status),form=e('form',{class:'record-appointment',role:'region','aria-label':'Stornierung bestätigen'});
+    const consequence=d.billing?'Die Rechnung '+d.billing.number+' wird automatisch vollständig storniert. Ein Stornobeleg wird erstellt und die Karte ins Archiv verschoben.':archiveOnly?'Diese Karte wird ins Archiv verschoben. Bisherige Angaben bleiben gespeichert.':'Die Karte wechselt nach Abgelehnt. Ein geplanter Montagetermin wird aufgehoben. Bisherige Angaben bleiben gespeichert.';
+    form.append(e('h3',{},'Möchten Sie wirklich stornieren?'),e('p',{},recordName(selected)),e('p',{},consequence),...(archiveOnly?[]:[input('Grund (optional)','reason','text','')]),e('button',{type:'submit',class:'btn'},'Ja, stornieren'),btn('Abbrechen',()=>form.remove()));
+    if((d.payments||[]).length)form.append(e('p',{class:'record-note'},'Bereits erfasste Zahlungen bleiben erhalten. Bei einer stornierten Rechnung wird der Rückzahlungsbetrag angezeigt. Eine Rückzahlung wird nicht ausgelöst.'));
+    form.addEventListener('submit',async ev=>{ev.preventDefault();await mutate({action:'cancel-order',confirmCancellation:true,reason:new FormData(form).get('reason')});});$('#inlineAction').replaceChildren(form);form.scrollIntoView({block:'center',behavior:'smooth'});
   }
   async function decision(status){
     const d=selected.document;
@@ -330,6 +331,7 @@
   async function showInvoiceSummary(r){
     const box=e('section',{class:'record-quote-summary'},e('h3',{},'Rechnung '+r.document.billing.number));root.append(box);
     try{const {invoice}=await api('/'+r.id+'/invoice');if(!box.isConnected)return;const paid=(r.document.payments||[]).reduce((n,p)=>n+Number(p.amount),0),remaining=Math.max(0,Math.round((invoice.snapshot.totalCHF-paid)*100)/100),status={preview_only:'Lokale Vorschau · nicht versendet',queued:'Versand ausstehend',processing:'Versand wird bearbeitet',accepted:'E-Mail vom Versanddienst angenommen',failed:'Versand fehlgeschlagen',unknown:'Versandausgang unklar · bitte vor erneutem Versand prüfen'};
+      if(invoice.cancellation){box.append(e('p',{},'STORNIERT · Kein offener Rechnungsbetrag.'),...(invoice.cancellation.refundDueCHF>0?[e('p',{},'Zurückzuerstatten: '+money(invoice.cancellation.refundDueCHF)+' · Rückzahlung noch nicht bestätigt.')]:[]),btn('Stornobeleg als PDF',()=>downloadPDF(r.id,'invoice-cancellation',invoice.cancellation.number)),btn('Originalrechnung ansehen',()=>downloadPDF(r.id,'invoice',invoice.number)));return;}
       box.append(e('p',{},remaining?'Offen: '+money(remaining):'Bezahlt · '+({cash:'Bar',twint:'TWINT',bank:'Banküberweisung'}[invoice.method])),e('p',{class:'record-note'},status[invoice.delivery_status]||'Versandstatus prüfen'),btn('Rechnung als PDF',()=>downloadPDF(r.id,'invoice',invoice.number)));
       if(remaining&&!r.document.archivedAt)box.append(btn('Bankzahlung erhalten',()=>{if(confirm('Den Eingang von '+money(remaining)+' auf dem Bankkonto geprüft?'))invoiceAction('/invoice',{action:'confirm-payment',paymentReceived:true},'✓ Zahlungseingang gespeichert.');}));
       if(['queued','failed','unknown'].includes(invoice.delivery_status))box.append(btn('Versand erneut prüfen',()=>invoiceAction('/invoice',{action:'retry'},'Versand geprüft.')));

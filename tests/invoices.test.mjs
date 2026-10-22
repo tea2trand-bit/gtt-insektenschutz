@@ -4,10 +4,11 @@ import {readFile,readdir,mkdir,writeFile} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {PGlite} from '@electric-sql/pglite';
 import {createRecord,fromSubmission,readRecord,changeRecord,deleteArchivedTestRecord} from '../netlify/lib/records.mts';
-import {completeWithInvoice,invoiceSnapshot,invoicePDF,invoiceForRecord,deliverInvoice,confirmInvoicePayment,directBillingAvailable,bankBillingAvailable} from '../netlify/lib/invoices.mts';
+import {completeWithInvoice,invoiceSnapshot,invoicePDF,invoiceForRecord,deliverInvoice,confirmInvoicePayment,directBillingAvailable,bankBillingAvailable,cancelWithInvoice,invoiceCancellationPDF} from '../netlify/lib/invoices.mts';
 import {invoiceQRData} from '../netlify/lib/invoice-pdf.mts';
 import {renderInvoicePDF} from '../netlify/lib/invoice-pdf.mts';
 import {PDFDocument} from 'pdf-lib';
+import {recordsAPI} from '../netlify/lib/records-api.mts';
 const local={deploy:{context:'dev'}},prod={deploy:{context:'production'}};
 async function setup(t,options={}){
  const db=await PGlite.create();t.after(()=>db.close());
@@ -95,4 +96,27 @@ test('production cash and TWINT receipts do not need bank details and send once 
   assert.equal(result.invoice.snapshot.paid,true);assert.equal(result.invoice.delivery_status,'accepted');assert.equal(sent,1);
   await completeWithInvoice(db,input.id,payload,prod,options);assert.equal(sent,1);assert.equal((await readRecord(db,input.id)).document.payments.length,1);
  }
+});
+
+test('confirmed cancellation atomically reverses invoice, preserves original and payments and is repeat-safe',async t=>{
+ for(const method of ['bank','cash','twint']){
+  const {db,input,body}=await setup(t),created=await completeWithInvoice(db,input.id,{...body,method,paymentReceived:true},local),originalPDF=await invoicePDF(db,created.invoice.id),originalRecord=created.record;
+  const payload={revision:created.record.revision,action:'cancel-order',confirmCancellation:true,reason:'Kunde hat abgesagt'};
+  await assert.rejects(cancelWithInvoice(db,input.id,{...payload,confirmCancellation:false}),/ausdrücklich bestätigen/);
+  const results=await Promise.all([cancelWithInvoice(db,input.id,payload),cancelWithInvoice(db,input.id,payload)]),cancelled=results[0];
+  assert.equal(cancelled.invoice.cancellation.totalCHF,-205.39);assert.equal(cancelled.invoice.cancellation.netCHF,-190);assert.equal(cancelled.invoice.cancellation.vatCHF,-15.39);assert.equal(cancelled.invoice.cancellation.refundDueCHF,method==='bank'?0:205.39);
+  assert.equal(cancelled.record.document.status,'Odbijeno');assert.ok(cancelled.record.document.archivedAt);assert.deepEqual(cancelled.record.document.payments,originalRecord.document.payments);assert.deepEqual(cancelled.invoice.snapshot,created.invoice.snapshot);assert.deepEqual(await invoicePDF(db,created.invoice.id),originalPDF);
+  assert.equal(cancelled.record.history.filter(h=>h.kind==='invoice_cancelled').length,1);assert.equal(results[1].record.revision,cancelled.record.revision);
+  await assert.rejects(confirmInvoicePayment(db,input.id,{revision:cancelled.record.revision,paymentReceived:true}),/storniert/);await assert.rejects(completeWithInvoice(db,input.id,{...body,method},local),/storniert/);
+  const pdf=await invoiceCancellationPDF(db,created.invoice.id);assert.equal((await PDFDocument.load(pdf)).getPageCount(),1);if(method==='cash')await writeFile('test-results/pdf/invoice-cancellation-preview.pdf',pdf);
+  process.env.RESEND_API_KEY='test-only';let calls=0;try{await deliverInvoice(db,created.invoice.id,prod,{fetch:async()=>{calls++;return Response.json({id:'must-not-send'});}});}finally{delete process.env.RESEND_API_KEY;}assert.equal(calls,0);
+  const response=await recordsAPI(new Request('https://example.invalid/api/admin/records/'+input.id,{method:'PATCH',body:JSON.stringify(payload)}),db,[input.id],{context:local});assert.equal(response.status,200);assert.equal((await response.json()).invoice.cancellation.number,cancelled.invoice.cancellation.number);
+ }
+});
+
+test('invoice cancellation rolls back together and cannot race with an active email send',async t=>{
+ const {db,input,body}=await setup(t),created=await completeWithInvoice(db,input.id,body,local),payload={revision:created.record.revision,confirmCancellation:true};
+ await db.query("UPDATE gtt_invoice_outbox SET status='processing',lease_until=now()+interval '1 minute' WHERE invoice_id=$1",[created.invoice.id]);await assert.rejects(cancelWithInvoice(db,input.id,payload),/gerade versendet/);assert.equal((await invoiceForRecord(db,input.id)).cancellation,null);
+ await db.query("UPDATE gtt_invoice_outbox SET status='accepted',lease_until=NULL WHERE invoice_id=$1",[created.invoice.id]);
+ await db.exec("ALTER TABLE gtt_record_history ADD CONSTRAINT test_cancel_failure CHECK(kind<>'invoice_cancelled')");await assert.rejects(cancelWithInvoice(db,input.id,payload));assert.equal((await invoiceForRecord(db,input.id)).cancellation,null);assert.deepEqual(await readRecord(db,input.id),created.record);
 });

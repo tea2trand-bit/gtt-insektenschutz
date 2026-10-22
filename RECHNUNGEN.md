@@ -2,7 +2,7 @@
 
 Stand: 22.10.2026. Smallinvoice wird fuer diesen Ablauf nicht verwendet.
 
-- Auftrag in Montage oeffnen und Auftrag abschliessen waehlen.
+- Auftrag in Montage oeffnen und Montage abschliessen waehlen. Danach erscheinen Rechnung, TWINT und Barzahlung.
 - Rechnung / Bankueberweisung: unveraenderliche Rechnung mit QR-Zahlteil; Restbetrag bleibt offen.
 - Bar / TWINT: den tatsaechlich erhaltenen Restbetrag bestaetigen; bezahlte Rechnung als Beleg.
 - Betrag stammt ausschliesslich aus der aktuellen, vom Kunden bestaetigten Offertversion. Aufmass muss vorliegen, eine offene Korrektur blockiert die Rechnung.
@@ -14,6 +14,12 @@ Stand: 22.10.2026. Smallinvoice wird fuer diesen Ablauf nicht verwendet.
 - Bankzahlung erhalten erfasst nur einen tatsaechlich geprueften Bankeingang. Es gibt keine Bank- oder TWINT-Schnittstelle und keinen automatischen Abgleich.
 - Alte abgeschlossene Auftraege werden nicht nachtraeglich abgerechnet. Fuer Goran pruefen / Abschliessen bleibt ohne Rechnung.
 - PDF-Abruf und Aktionen verlangen die bestehende Admin-Anmeldung. Ausgestellte Rechnungen koennen nicht durch normale Kartenbearbeitung ueberschrieben oder mit TEST-Aufraeumen geloescht werden.
+
+## Stornieren
+
+Die Schaltflaeche Stornieren ist voruebergehend in allen aktiven Phasen verfuegbar. Der erste Klick oeffnet die Rueckfrage; erst Ja, stornieren speichert die Aktion. Ohne Rechnung wechseln offene Karten nach Abgelehnt, bereits abgelehnte oder abgeschlossene Karten werden archiviert.
+
+Mit Rechnung werden Karte und Rechnung in einer einzigen Datenbankoperation storniert und die Karte archiviert. Der unveraenderte Originalbeleg bleibt erhalten; ein separater Stornobeleg mit negativen Brutto-, Netto- und Steuerbetraegen steht als PDF zur Verfuegung. Er wird nicht automatisch per E-Mail versendet. Wiederholte Klicks erzeugen keinen zweiten Beleg. Bereits gezahlte Betraege werden als zurueckzuerstatten ausgewiesen; keine automatische Rueckzahlung. Ein laufender Rechnungsversand muss erst beendet sein. Stornierte Rechnungen und Offerten werden nicht erneut versendet.
 
 ## Empfaengerkonto noch zu bestaetigen
 
