@@ -39,6 +39,12 @@ h2{font-size:18px;margin:0 0 14px;color:var(--green);font-weight:600}
 .muted{color:var(--muted);font-size:13px}
 .login{max-width:380px;margin:12vh auto 0}
 .login input{width:100%;padding:12px 14px;border:1px solid var(--fieldline);border-radius:10px;margin:14px 0}
+.login-status{font-size:13px;color:var(--muted);line-height:1.5;margin:0 0 10px}.login-status:empty{display:none}
+#loginBtn{display:flex;align-items:center;justify-content:center;gap:10px;min-height:46px}
+#loginBtn[aria-busy=true]{opacity:.8;cursor:wait}
+#loginBtn[aria-busy=true]::before{content:"";width:16px;height:16px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:login-spin .8s linear infinite;flex-shrink:0}
+@keyframes login-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){#loginBtn[aria-busy=true]::before{animation:none}}
 .err{color:var(--red);font-weight:500;font-size:14px;min-height:20px}
 .drop{display:block;border:2px dashed #b9d3ab;border-radius:14px;background:#f6faf3;padding:34px 16px;text-align:center;cursor:pointer;transition:.2s}
 .drop.over{background:#e8f4df;border-color:var(--green)}
@@ -104,9 +110,10 @@ input::placeholder{color:#a3aba5}
     <h1 style="margin-top:14px">Anmeldung</h1>
     <p class="muted">Anfragen, Projekte und Saisonaktion auf gtt-insektenschutz.ch</p>
     <form id="loginForm">
-      <input id="pw" type="password" placeholder="Passwort" autocomplete="current-password" required>
-      <div class="err" id="loginErr"></div>
-      <button class="btn" style="width:100%" type="submit">Anmelden</button>
+      <input id="pw" type="password" placeholder="Passwort" aria-label="Passwort" autocomplete="current-password" required>
+      <div class="err" id="loginErr" role="alert" hidden></div>
+      <div class="login-status" id="loginStatus" role="status" aria-live="polite"></div>
+      <button class="btn" id="loginBtn" style="width:100%" type="submit" aria-busy="false">Anmelden</button>
     </form>
   </div>
 </section>
@@ -233,7 +240,7 @@ input::placeholder{color:#a3aba5}
     const headers = Object.assign({}, opts.headers || {});
     if (token) headers.Authorization = "Bearer " + token;
     if (opts.json !== undefined){ headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(opts.json); }
-    const res = await fetch("/api/admin/" + path, { method: opts.method || "GET", headers, body: opts.body });
+    const res = await fetch("/api/admin/" + path, { method: opts.method || "GET", headers, body: opts.body, signal: opts.signal });
     let data = {};
     try { data = await res.json(); } catch {}
     if (res.status === 401 && path !== "login"){ logout(); throw new Error("Ihre Sitzung ist abgelaufen. Bitte erneut anmelden."); }
@@ -252,19 +259,38 @@ input::placeholder{color:#a3aba5}
   }
 
   // -------------------------------------------------------------- auth ----
-  function showApp(){ $("#loginView").hidden = true; $("#appView").hidden = false; loadItems(); loadOffer(); window.dispatchEvent(new Event("gtt:admin-login")); }
+  function showApp(){ $("#loginView").hidden = true; $("#appView").hidden = false; $("#recordsRoot").replaceChildren(el("p", {class:"record-note",role:"status"}, "Anfragen werden geladen…")); loadItems(); loadOffer(); window.dispatchEvent(new Event("gtt:admin-login")); }
   function logout(){
     token = null; try { sessionStorage.removeItem("gttAdminToken"); } catch {}
     $("#appView").hidden = true; $("#loginView").hidden = false;
     window.dispatchEvent(new Event("gtt:admin-logout"));
   }
+  let loginPending = false;
   $("#loginForm").addEventListener("submit", async (e) => {
-    e.preventDefault(); $("#loginErr").textContent = "";
+    e.preventDefault();
+    if(loginPending)return;
+    loginPending=true;
+    const button=$("#loginBtn"),password=$("#pw"),message=$("#loginStatus"),error=$("#loginErr");
+    error.textContent="";error.hidden=true;
+    button.disabled=true;button.setAttribute("aria-busy","true");button.textContent="Anmeldung läuft…";
+    password.readOnly=true;message.textContent="Zugang wird geprüft. Bitte kurz warten.";
+    const controller=new AbortController();
+    const slow=setTimeout(()=>{message.textContent="Die Anmeldung dauert etwas länger. Bitte warten…";},8000);
+    const timeout=setTimeout(()=>controller.abort(),30000);
     try {
-      const { token: t } = await api("login", { method: "POST", json: { password: $("#pw").value } });
+      const { token: t } = await api("login", { method: "POST", json: { password: password.value }, signal: controller.signal });
+      if(!t)throw new Error("Die Anmeldung konnte nicht abgeschlossen werden. Bitte erneut versuchen.");
       token = t; try { sessionStorage.setItem("gttAdminToken", t); } catch {}
-      $("#pw").value = ""; showApp();
-    } catch (err){ $("#loginErr").textContent = err.message === "Falsches Passwort" ? "Falsches Passwort." : err.message; }
+      password.value = ""; showApp();
+    } catch (err){
+      error.textContent = controller.signal.aborted ? "Die Anmeldung dauert zu lange. Bitte erneut versuchen." : err instanceof TypeError ? "Keine Verbindung. Bitte Internetverbindung prüfen und erneut versuchen." : err.message === "Falsches Passwort" ? "Falsches Passwort. Bitte erneut eingeben." : err.message;
+      error.hidden=false;
+    } finally {
+      clearTimeout(slow);clearTimeout(timeout);loginPending=false;
+      button.disabled=false;button.setAttribute("aria-busy","false");button.textContent="Anmelden";
+      password.readOnly=false;message.textContent="";
+      if(!$("#loginView").hidden)password.focus();
+    }
   });
   $("#logoutBtn").addEventListener("click", logout);
 

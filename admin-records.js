@@ -83,11 +83,10 @@
   }
   function renderList(){
     selected=null;
-    root.replaceChildren(e('div',{class:'record-head'},e('div',{},e('h2',{},archived?'Archiv':'Anfragen'),e('p',{class:'record-note'},archived?'Archivierte Anfragen können jederzeit wiederhergestellt werden.':'Website-Anfragen und Offerten werden automatisch erfasst.')),e('div',{class:'record-actions'},...(archived?[]:[btn('Kunde hinzufügen',manual,'')]),btn('Aktualisieren',load))));
+    root.replaceChildren(e('div',{class:'record-head record-list-head'},e('div',{class:'record-list-heading'},e('div',{class:'record-list-title'},e('h2',{},archived?'Archiv':'Anfragen'),btn(archived?'← Aktive Anfragen':'Archiv',()=>{archived=!archived;filter=archived?'':'Novi upit';search='';load();})),e('p',{class:'record-note'},archived?'Archivierte Anfragen können jederzeit wiederhergestellt werden.':'Website-Anfragen und Offerten werden automatisch erfasst.')),e('div',{class:'record-actions'},...(archived?[]:[btn('Kunde hinzufügen',manual,'')]),btn('Aktualisieren',load,''))));
     const steps=records.some(needsHistoricalReview)?['legacy_review',...STEPS]:STEPS;
-    root.append(e('div',{class:'record-stage-bar'},e('button',{id:'recordStagePicker',type:'button',class:'btn ghost record-stage-picker','aria-haspopup':'dialog','aria-expanded':'false',onclick:()=>chooseStage(steps)},e('span',{},STATUS[filter]||'Alle archivierten Anfragen'),e('strong',{class:'record-stage-count'},String(stageCount(filter))),e('span',{'aria-hidden':'true',class:'record-stage-chevron'},'⌄'))));
+    root.append(e('div',{class:'record-stage-bar'},e('button',{id:'recordStagePicker',type:'button',class:'btn ghost record-stage-picker','aria-haspopup':'dialog','aria-expanded':'false',onclick:()=>chooseStage(steps)},'Anfragenübersicht')));
     const filterOptions=e('div',{class:'record-filter-options'});
-    root.append(e('div',{class:'record-filter-bar'},filterOptions,btn(archived?'← Aktive Anfragen':'Archiv',()=>{archived=!archived;filter=archived?'':'Novi upit';search='';load();})));
     if(filter==='legacy_review')root.append(e('p',{class:'record-note'},'Frühere Anfragen für Goran: prüfen und bereits erledigte Aufträge mit „Abschliessen“ nach „Abgeschlossen“ verschieben.'));
     if(filter==='Novi upit'){
       const phases=e('div',{class:'record-actions','aria-label':'Anfragebearbeitung'});
@@ -106,6 +105,7 @@
       filterOptions.append(phases);
     }
     if(filter==='Reklamationen'&&!archived)filterOptions.append(e('div',{class:'record-actions'},...[['active','Offen / in Bearbeitung'],['Erledigt','Erledigt']].map(([value,label])=>btn(label,()=>{complaintFilter=value;renderList();},complaintFilter===value?'small':'ghost small'))));
+    if(filterOptions.childNodes.length)root.append(e('div',{class:'record-filter-bar'},filterOptions));
     root.append(e('div',{class:'record-toolbar'},e('input',{'aria-label':'Anfragen durchsuchen',placeholder:'Name, Kontakt oder Offertnummer suchen',value:search,oninput:ev=>{search=ev.target.value;drawRows();}}),offerSummary?e('section',{class:'record-offer-summary','aria-label':'Gesamtwert aktiver Offerten'},e('span',{},offerSummary.count+' Offerten'),e('strong',{},money(offerSummary.total))):null),e('div',{id:'recordRows',class:'record-list'}));drawRows();
   }
   function drawRows(){
