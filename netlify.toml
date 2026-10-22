@@ -3,6 +3,7 @@
   publish = "dist"
 
 [functions]
+  external_node_modules = ["pdfkit"]
   included_files = ["netlify/assets/fonts/DejaVuSans.ttf"]
 
 [[headers]]

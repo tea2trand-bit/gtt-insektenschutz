@@ -5,6 +5,7 @@ import {calculateMeasuredOffer,refreshDraftContact} from './admin-measurements.m
 import {readRequestMeasurements} from './request-measurements.mts';
 import type {Offer} from './projects-store.mts';
 import {quotePDFResponse} from './quote-pdf.mts';
+import {completeWithInvoice,confirmInvoicePayment,invoiceForRecord,invoicePDF,deliverInvoice,directBillingAvailable} from './invoices.mts';
 const reply = (data:unknown,status=200) => Response.json(data,{status,headers:{"Cache-Control":"no-store", "X-Content-Type-Options":"nosniff"}});
 export async function recordsAPI(req: Request, db: QueryDB, path: string[], options:{offer?:Offer;context?:any}={}) {
   const id = path[0];
@@ -21,6 +22,13 @@ export async function recordsAPI(req: Request, db: QueryDB, path: string[], opti
     const input=fromSubmission({inquiry_id:'manual-'+body.requestId,record_source:'manual',name,firma:company,telefon:phone,email,adresse:clean(body.address),plz:clean(body.postalCode,80),kanal:clean(body.channel,100),nachricht:clean(body.request,6000),berechneter_preis:price==null?'':String(price)})!;
     const created=await createRecord(db,input,"Admin: ručni unos (zajednička prijava)");
     return reply({record:await readRecord(db,input.id)},created.created?201:200);
+  }
+  if(id==='resolve'&&method==='GET'){
+    const reference=new URL(req.url).searchParams.get('offerte')||'';
+    if(!/^GTT-\d{3,15}$/.test(reference))throw new RecordError('Ungültige Offertnummer.',400);
+    const {rows}=await db.query('SELECT record_id AS id FROM gtt_quote_versions WHERE version=$1',[reference.slice(4)]);
+    if(!rows[0])throw new RecordError('Offerte nicht gefunden.',404);
+    return reply(rows[0]);
   }
   if (id === "pending") {
     if (method === "GET") {
@@ -52,7 +60,7 @@ export async function recordsAPI(req: Request, db: QueryDB, path: string[], opti
       FROM gtt_records WHERE COALESCE(document->>'isTest','false')<>'true' AND COALESCE(document->>'archivedAt','')=''
     ) SELECT COALESCE(sum(amount),0)::text AS total,count(amount)::int AS count FROM offer_amounts WHERE amount>=0`);
     const offerSummary={total:Number(summary.rows[0].total),count:summary.rows[0].count};
-    return reply({offerSummary,records:rows.map(({offer_versions,...record})=>({...record,offerReferences:offer_versions.flatMap((version:string)=>[offerNumber(record.id,Number(version)),legacyOfferNumber(record.id,Number(version))])}))});
+    return reply({billingAvailable:directBillingAvailable(options.context),offerSummary,records:rows.map(({offer_versions,...record})=>({...record,offerReferences:offer_versions.flatMap((version:string)=>[offerNumber(record.id,Number(version)),legacyOfferNumber(record.id,Number(version))])}))});
   }
   if (id === "import" && method === "POST") {
     const body:any = await req.json();
@@ -66,6 +74,24 @@ export async function recordsAPI(req: Request, db: QueryDB, path: string[], opti
     return reply({created,duplicates:inputs.length-created});
   }
   if (!/^GTT-[a-f0-9]{24}$/.test(id || "")) throw new RecordError("Neispravan ID kartona.");
+  if(path[1]==='complete-invoice'&&path.length===2&&method==='POST')return reply(await completeWithInvoice(db,id,await req.json(),options.context));
+  if(path[1]==='invoice'&&path.length===2){
+    const invoice=await invoiceForRecord(db,id);
+    if(!invoice)throw new RecordError('Rechnung nicht gefunden.',404);
+    if(method==='GET'){
+      if(new URL(req.url).searchParams.get('format')==='pdf')return new Response(new Uint8Array(await invoicePDF(db,invoice.id)),{headers:{'Content-Type':'application/pdf','Content-Disposition':'attachment; filename="'+invoice.number+'.pdf"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+      return reply({invoice});
+    }
+    if(method==='POST'){
+      const body:any=await req.json();
+      if(body.action==='confirm-payment')return reply(await confirmInvoicePayment(db,id,body));
+      if(body.action==='retry'){
+        await deliverInvoice(db,invoice.id,options.context);
+        return reply({record:await readRecord(db,id),invoice:await invoiceForRecord(db,id)});
+      }
+    }
+    return reply({error:'Methode nicht erlaubt.'},405);
+  }
   if(path[1]==='measurement-proposal'&&path.length===2&&method==='GET'){
     const record=await readRecord(db,id);
     const d=record.document;
