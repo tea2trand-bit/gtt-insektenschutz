@@ -7,6 +7,7 @@ export async function readAcceptanceOffer(db:QueryDB,claims:OfferClaims){
  const row=rows[0];
  if(!row||row.snapshot.status!=='priced'||!row.snapshot.quote)throw new OfferLinkError('Diese Offerte ist nicht verfügbar.',404);
  if(row.document.archivedAt)throw new OfferLinkError('Diese Anfrage ist nicht mehr aktiv. Bitte kontaktieren Sie unser Team.',410);
+ if(row.document.orderCancellation&&!row.document.orderCancellation.reopenedAt||row.document.status==='Odbijeno'&&row.document.customerAcceptance)throw new OfferLinkError('Dieser Auftrag wurde storniert. Bitte kontaktieren Sie unser Team.',410);
  if(Number(row.document.intake?.version)!==claims.q)throw new OfferLinkError('Zu dieser Anfrage gibt es eine neuere Offerte. Bitte verwenden Sie die aktuelle E-Mail.',409);
  return row;
 }
